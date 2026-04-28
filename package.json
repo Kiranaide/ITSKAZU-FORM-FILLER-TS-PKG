@@ -33,7 +33,9 @@
     "format": "biome format --write src tests",
     "release": "node scripts/release.mjs"
   },
-  "dependencies": {},
+  "dependencies": {
+    "ws": "^8.20.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",
     "@changesets/cli": "^2.29.7",
@@ -44,8 +46,7 @@
     "jsdom": "^29.1.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.2",
-    "vitest": "^4.1.5",
-    "ws": "^8.20.0"
+    "vitest": "^4.1.5"
   },
   "files": [
     "dist"

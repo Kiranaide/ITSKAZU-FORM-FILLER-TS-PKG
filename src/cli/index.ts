@@ -19,10 +19,10 @@ function printBanner(): void {
   console.log(
     `
 ╔═══════════════════════════════════════════╗
-║     kazu-fira v1.0.0                      ║
+║     kazu-fira v1.4.0                      ║
 ║     Universal Form Recorder & Replayer    ║
 ╚═══════════════════════════════════════════╝
-  `.trim(),
+  `.trim()
   );
 }
 
@@ -57,7 +57,7 @@ Examples:
 
   # Custom host (for containers/remote)
   npx kazu-fira 5173 --host 192.168.1.100
-  `.trim(),
+  `.trim()
   );
 }
 
@@ -95,12 +95,17 @@ async function runCli(args: string[]): Promise<void> {
   const port = parseInt(options.port as string, 10);
   const workspace = options.workspace;
 
-  let appPort = options["app-port"] ? parseInt(options["app-port"] as string, 10) : null;
+  let appPort = options["app-port"]
+    ? parseInt(options["app-port"] as string, 10)
+    : null;
   const appUrl = options.url;
 
   if (!appPort && appUrl) {
     const parsed = new URL(appUrl);
-    appPort = parseInt(parsed.port || (parsed.protocol === "https:" ? "443" : "80"), 10);
+    appPort = parseInt(
+      parsed.port || (parsed.protocol === "https:" ? "443" : "80"),
+      10
+    );
   }
 
   if (!appPort) {
