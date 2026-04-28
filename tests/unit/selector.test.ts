@@ -23,4 +23,21 @@ describe("selector", () => {
     expect(selector.strategies.map((item) => item.type)).toContain("name");
     expect(resolveElement(selector)).toBe(input);
   });
+
+  it("skips unstable id strategy and falls back to aria-label", () => {
+    document.body.innerHTML = "";
+
+    const input = document.createElement("input");
+    input.id = ":r1:";
+    input.setAttribute("aria-label", "Work Email");
+    document.body.append(input);
+
+    const selector = extractSelectors(input);
+    const strategyTypes = selector.strategies.map((item) => item.type);
+
+    expect(strategyTypes).not.toContain("id");
+    expect(strategyTypes).toContain("aria-label");
+    expect(selector.label).toBe("Work Email");
+    expect(resolveElement(selector)).toBe(input);
+  });
 });

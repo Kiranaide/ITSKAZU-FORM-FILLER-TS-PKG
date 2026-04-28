@@ -61,7 +61,8 @@ export class Replayer {
   }
 
   private async executeAction(action: RecordedAction, el: Element): Promise<void> {
-    (el as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const maybeScrollable = el as HTMLElement & { scrollIntoView?: (options?: ScrollIntoViewOptions) => void };
+    maybeScrollable.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 
     switch (action.type) {
       case "input":

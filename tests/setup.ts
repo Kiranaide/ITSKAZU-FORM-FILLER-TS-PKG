@@ -1,5 +1,4 @@
-// import { JSDOM } from "jsdom";
-// import { performance as nodePerformance } from "node:perf_hooks";
+import { performance as nodePerformance } from "node:perf_hooks";
 
 // const dom = new JSDOM("<!doctype html><html><body></body></html>", {
 //   url: "https://example.test/",
@@ -37,15 +36,17 @@
 //   });
 // }
 
-// Object.defineProperty(globalThis, "performance", {
-//   value: nodePerformance,
-//   configurable: true,
-// });
+Object.defineProperty(globalThis, "performance", {
+  value: nodePerformance,
+  configurable: true,
+});
 
-// Object.defineProperty(globalThis, "CSS", {
-//   value: window.CSS ?? { escape: (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "\\$&") },
-//   configurable: true,
-// });
+Object.defineProperty(globalThis, "CSS", {
+  value: globalThis.CSS ?? {
+    escape: (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "\\$&"),
+  },
+  configurable: true,
+});
 
 // Object.defineProperty(globalThis, "getComputedStyle", {
 //   value: window.getComputedStyle.bind(window),

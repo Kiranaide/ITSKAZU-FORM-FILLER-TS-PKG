@@ -58,7 +58,7 @@ function main() {
 
   run("bun install --frozen-lockfile");
   run("bun run type-check");
-  run("bun test");
+  run("bun run test");
   run("bun run build");
 
   const next = read(
