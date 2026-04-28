@@ -1,6 +1,6 @@
 {
   "name": "itskazu-form-filler",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Zero-dependency form recording and replay package for browser apps.",
   "author": "ItsKazu",
   "license": "MIT",
