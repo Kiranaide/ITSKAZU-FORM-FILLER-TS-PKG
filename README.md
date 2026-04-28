@@ -1,4 +1,4 @@
-# kazu-fira
+# Kazu-Fira
 
 Framework-agnostic form recorder/replayer for browser apps, with optional dev toolbar + proxy CLI.
 
