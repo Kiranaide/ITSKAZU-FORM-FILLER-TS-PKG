@@ -4,6 +4,7 @@ node_modules
 # output
 out
 dist
+dist-ext
 *.tgz
 
 # code coverage
@@ -35,3 +36,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Test Environtment
 test-results
+
+# workspace build/deps artifacts
+apps/ext/node_modules
+apps/ext/dist
+apps/ext/.vite
+
+# local agent/indexing metadata
+.serena

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Kazu Fira",
+  "version": "0.0.1",
+  "description": "Injects the Form Filler toolbox into the active tab on click.",
+  "action": {
+    "default_title": "Kazu Fira"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["content-entry.js", "assets/*.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

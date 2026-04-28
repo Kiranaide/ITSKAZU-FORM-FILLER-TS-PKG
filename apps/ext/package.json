@@ -1,0 +1,32 @@
+{
+  "name": "@itskazu/ext",
+  "private": true,
+  "version": "1.4.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --project tsconfig.json --noEmit && vite build",
+    "build:ext": "tsc --project tsconfig.json --noEmit && vite build --config vite.ext.config.ts && node ./scripts/export-ext.mjs",
+    "export:ext": "node ./scripts/export-ext.mjs",
+    "zip:ext": "node ./scripts/zip-ext.mjs",
+    "type-check": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "biome check src scripts vite.config.ts vite.ext.config.ts",
+    "lint:fix": "biome check --write src scripts vite.config.ts vite.ext.config.ts",
+    "format": "biome format --write src scripts vite.config.ts vite.ext.config.ts"
+  },
+  "dependencies": {
+    "kazu-fira": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.24",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^8.0.7"
+  }
+}
