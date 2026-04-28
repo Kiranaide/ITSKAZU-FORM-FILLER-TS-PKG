@@ -34,8 +34,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 
-# Test Environtment
+# Test Environment
 test-results
+playwright-report
 
 # workspace build/deps artifacts
 apps/ext/node_modules

@@ -1,6 +1,20 @@
 # Kazu-Fira (Filler)
 
-Framework-agnostic form recorder/replayer for browser apps, now organized as a Bun monorepo.
+[![npm version](https://img.shields.io/npm/v/kazu-fira)](https://www.npmjs.com/package/kazu-fira)
+[![CI](https://github.com/Kiranaide/Kazu-Fira/actions/workflows/release.yml/badge.svg)](https://github.com/Kiranaide/Kazu-Fira/actions)
+[![MIT license](https://img.shields.io/npm/l/kazu-fira)](LICENSE)
+
+Framework-agnostic form recorder/replayer for browser apps.
+
+## Why Kazu-Fira?
+
+Testing forms is hard. Most solutions either require expensive enterprise tools, invasive injected scripts, or produce brittle tests that break on UI changes. Kazu-Fira records real user interactions as portable scripts you can replay, inspect, or migrate — no locked-in dependencies.
+
+## Use cases
+
+- **QA automation** — replay recorded flows to verify form behavior
+- **Accessibility auditing** — replay scripts to test a11y tooling
+- **Integration test helpers** — generate test data from real user flows
 
 ## Workspaces
 
@@ -120,3 +134,7 @@ What it does:
 - commits release files and version changes
 - publishes to npm via Changesets
 - pushes commit + tags in one command (`git push --follow-tags`)
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history.

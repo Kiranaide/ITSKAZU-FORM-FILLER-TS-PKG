@@ -33,6 +33,7 @@
     "format": "biome format --write src tests"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "bun": ">=1.2"
   }
 }
