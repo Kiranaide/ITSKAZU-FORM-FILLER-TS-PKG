@@ -18,6 +18,16 @@
     }
   },
   "files": {
-    "includes": ["src/**", "tests/**", "scripts/**", "*.json", "*.ts", "*.md"]
+    "includes": [
+      "packages/**",
+      "apps/**",
+      "tests/**",
+      "examples/**",
+      "scripts/**",
+      ".github/**",
+      "*.json",
+      "*.ts",
+      "*.md"
+    ]
   }
 }

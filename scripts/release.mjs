@@ -1,112 +1,115 @@
-#!/usr/bin/env node
-
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-function run(command, options = {}) {
+const run = (command, options = {}) => {
   console.log(`\n$ ${command}`);
-  execSync(command, { stdio: "inherit", ...options });
-}
+  execSync(command, { stdio: "inherit", cwd: process.cwd(), ...options });
+};
 
-function read(command) {
-  return execSync(command, { encoding: "utf8" }).trim();
-}
+const read = (command) =>
+  execSync(command, { encoding: "utf8", cwd: process.cwd() }).trim();
 
-function fail(message) {
+const fail = (message) => {
   console.error(`\nRelease failed: ${message}`);
   process.exit(1);
-}
+};
 
-function parseArgs(argv) {
-  const args = { bump: "hotfix", noGh: false, noPush: false };
-  for (const token of argv) {
-    if (["hotfix", "minor", "major"].includes(token)) {
-      args.bump = token;
-      continue;
-    }
-    if (token === "--no-gh") {
-      args.noGh = true;
-      continue;
-    }
-    if (token === "--no-push") {
-      args.noPush = true;
-      continue;
-    }
-    fail(`Unknown argument: ${token}`);
+const getVersion = (relativePath) => {
+  const absolutePath = resolve(process.cwd(), relativePath);
+  const packageJson = JSON.parse(readFileSync(absolutePath, "utf8"));
+
+  if (
+    typeof packageJson.version !== "string" ||
+    packageJson.version.length === 0
+  ) {
+    throw new Error(`Missing valid version in ${relativePath}`);
   }
-  return args;
-}
 
-function ensureCleanTree() {
-  const status = read("git status --porcelain");
-  if (status) {
-    fail("working tree not clean. Commit or stash changes first.");
+  return packageJson.version;
+};
+
+const parseReleaseType = (argv) => {
+  const value = argv[2];
+  if (!value) {
+    return null;
   }
-}
 
-function ensureOnMaster() {
-  const branch = read("git rev-parse --abbrev-ref HEAD");
-  if (branch !== "master") {
-    fail(`current branch is '${branch}'. Switch to 'master' first.`);
+  if (!["hotfix", "minor", "major"].includes(value)) {
+    fail(`invalid release type '${value}'. Use hotfix, minor, or major.`);
   }
-}
 
-function printBanner(version) {
-  const pad = " ".repeat(38 - version.length);
-  console.log(`
-╔═══════════════════════════════════════════╗
-║     kazu-fira v${version}${pad}║
-║     Universal Form Recorder & Replayer    ║
-╚═══════════════════════════════════════════╝
-`);
-}
+  return value;
+};
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const bumpMap = {
+const createChangesetForReleaseType = (releaseType) => {
+  if (!releaseType) {
+    return;
+  }
+
+  const bumpTypeMap = {
     hotfix: "patch",
     minor: "minor",
     major: "major",
   };
 
-  ensureCleanTree();
-  ensureOnMaster();
+  const bumpType = bumpTypeMap[releaseType];
+  const changesetDir = resolve(process.cwd(), ".changeset");
+  const filename = `auto-release-${Date.now()}.md`;
+  const filepath = resolve(changesetDir, filename);
+  const content = `---
+"kazu-fira": ${bumpType}
+---
 
-  run("bun install --frozen-lockfile");
-  run("bun run type-check");
-  run("bun run test");
-  run("bun run build");
+Automated ${releaseType} release.
+`;
 
-  const next = read(
-    `npm version ${bumpMap[args.bump]} -m "chore(release): bump version to %s"`
-  );
+  mkdirSync(changesetDir, { recursive: true });
+  writeFileSync(filepath, content, "utf8");
+  console.log(`Created automatic changeset: .changeset/${filename}`);
+};
 
-  printBanner(next);
-
-  if (!args.noPush) {
-    run("git push --follow-tags");
+const ensureCleanGitTree = () => {
+  const status = read("git status --porcelain");
+  if (status.length > 0) {
+    fail(
+      "working tree is not clean. Commit or stash existing changes before releasing.",
+    );
   }
+};
 
-  const required = [
-    "dist/index.mjs",
-    "dist/index.cjs",
-    "dist/index.d.ts",
-    "dist/cli.mjs",
-  ];
-
-  for (const f of required) {
-    if (!existsSync(f)) {
-      fail(`missing required dist file: ${f}`);
-    }
+const ensureMasterBranch = () => {
+  const branch = read("git rev-parse --abbrev-ref HEAD");
+  if (branch !== "master") {
+    fail(`release must run from 'master', current branch is '${branch}'.`);
   }
+};
 
-  run("npm publish --access public");
-
-  if (!args.noGh) {
-    run(`gh release create ${next} --generate-notes --latest`);
+const ensureReleaseChangesExist = () => {
+  try {
+    run("git diff --cached --quiet");
+    fail(
+      "no release changes were generated. Add a changeset before releasing.",
+    );
+  } catch {
+    // Non-zero exit code means staged changes exist, which is expected.
   }
+};
 
-  console.log(`\nRelease complete: ${next}`);
-}
+ensureCleanGitTree();
+ensureMainBranch();
+const releaseType = parseReleaseType(process.argv);
+createChangesetForReleaseType(releaseType);
+run("bun run type-check");
+run("bun run test");
+run("bun run build");
+run("bun run release:version");
+run("bun install");
 
-main();
+const version = getVersion("packages/core/package.json");
+
+run("git add -A");
+ensureReleaseChangesExist();
+run(`git commit -m "chore(release): v${version}"`);
+run("bun run release:publish");
+run("git push --follow-tags");

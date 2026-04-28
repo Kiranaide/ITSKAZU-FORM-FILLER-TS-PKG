@@ -25,16 +25,20 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsup",
-    "type-check": "tsc --noEmit",
-    "test": "vitest run",
-    "lint": "biome check src tests",
-    "lint:fix": "biome check --write src tests",
-    "format": "biome format --write src tests",
-    "release": "node scripts/release.mjs"
-  },
-  "dependencies": {
-    "ws": "^8.20.0"
+    "dev:ext": "bun run --filter @itskazu/ext dev",
+    "build:ext": "bun run --filter @itskazu/ext build:ext",
+    "export:ext": "bun run --filter @itskazu/ext export:ext",
+    "zip:ext": "bun run --filter @itskazu/ext zip:ext",
+    "build": "bun run --filter kazu-fira build && bun run --filter @itskazu/ext build",
+    "type-check": "bun run --filter kazu-fira type-check && bun run --filter @itskazu/ext type-check",
+    "test": "bun run --filter kazu-fira test && bun run --filter @itskazu/ext test",
+    "lint": "bun run --filter kazu-fira lint && bun run --filter @itskazu/ext lint",
+    "lint:fix": "bun run --filter kazu-fira lint:fix && bun run --filter @itskazu/ext lint:fix",
+    "format": "bun run --filter kazu-fira format && bun run --filter @itskazu/ext format",
+    "release:version": "bunx changeset version && bun run release:sync-versions",
+    "release:sync-versions": "bun run ./scripts/sync-versions.mjs",
+    "release:publish": "bunx changeset publish",
+    "release": "bun run ./scripts/release.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",
@@ -48,10 +52,7 @@
     "typescript": "^5.9.2",
     "vitest": "^4.1.5"
   },
-  "files": [
-    "dist"
-  ],
   "engines": {
-    "node": ">=18.18"
+    "node": ">=20"
   }
 }

@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "kazu-fira": ["../../packages/core/src/index.ts"]
+    },
+    "types": ["vite/client", "node", "chrome"],
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "vite.config.ts",
+    "vite.ext.config.ts",
+    "../../packages/core/src/**/*.ts"
+  ]
+}
