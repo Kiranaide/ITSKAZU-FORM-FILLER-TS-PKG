@@ -43,10 +43,10 @@ function ensureCleanTree() {
   }
 }
 
-function ensureOnMain() {
+function ensureOnmaster() {
   const branch = read("git rev-parse --abbrev-ref HEAD");
-  if (branch !== "main") {
-    fail(`current branch is '${branch}'. Switch to 'main' first.`);
+  if (branch !== "master") {
+    fail(`current branch is '${branch}'. Switch to 'master' first.`);
   }
 }
 
@@ -61,7 +61,9 @@ function main() {
   run("bun test");
   run("bun run build");
 
-  const next = read(`npm version ${args.bump} -m "chore(release): bump version to %s"`);
+  const next = read(
+    `npm version ${args.bump} -m "chore(release): bump version to %s"`,
+  );
 
   if (!args.noPush) {
     run("git push --follow-tags");
