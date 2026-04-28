@@ -78,10 +78,10 @@ const ensureCleanGitTree = () => {
   }
 };
 
-const ensureMasterBranch = () => {
+const ensureMainBranch = () => {
   const branch = read("git rev-parse --abbrev-ref HEAD");
-  if (branch !== "master") {
-    fail(`release must run from 'master', current branch is '${branch}'.`);
+  if (branch !== "main") {
+    fail(`release must run from 'main', current branch is '${branch}'.`);
   }
 };
 
@@ -97,7 +97,7 @@ const ensureReleaseChangesExist = () => {
 };
 
 ensureCleanGitTree();
-ensureMasterBranch();
+ensureMainBranch();
 const releaseType = parseReleaseType(process.argv);
 createChangesetForReleaseType(releaseType);
 run("bun run type-check");
