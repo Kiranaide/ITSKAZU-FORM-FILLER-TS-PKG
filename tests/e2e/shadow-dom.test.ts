@@ -1,7 +1,7 @@
 import "../setup";
 import { describe, expect, it } from "vitest";
-import { extractSelectors, resolveElement } from "../../src/core/selector";
 import { Replayer } from "../../src/core/replayer";
+import { extractSelectors, resolveElement } from "../../src/core/selector";
 
 describe("shadow dom e2e", () => {
   it("resolves open shadow root elements", () => {

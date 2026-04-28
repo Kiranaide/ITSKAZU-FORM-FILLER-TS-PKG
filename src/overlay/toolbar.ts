@@ -51,7 +51,13 @@ function wireToolbar(shadowRoot: ShadowRoot): void {
 
   const updateStatus = (status: string): void => {
     elements.statusNode.textContent = status;
-    logPanel.add({ id: crypto.randomUUID(), level: "info", category: "system", message: status, ts: Date.now() });
+    logPanel.add({
+      id: crypto.randomUUID(),
+      level: "info",
+      category: "system",
+      message: status,
+      ts: Date.now(),
+    });
   };
 
   const syncButtons = (recording: boolean): void => {
@@ -79,7 +85,7 @@ function wireToolbar(shadowRoot: ShadowRoot): void {
     latestScript = recorder.stop();
     saveScript(latestScript);
     recorder = null;
-    updateStatus(`saved (${latestScript.actions.length})`);
+    updateStatus(`saved (${latestScript.steps?.length ?? latestScript.actions?.length ?? 0})`);
     syncButtons(false);
   });
 

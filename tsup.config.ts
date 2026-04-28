@@ -8,7 +8,7 @@ export default defineConfig([
     treeshake: true,
     minify: true,
     target: "es2022",
-    globalName: "ItskazuFormFiller",
+    globalName: "KazuFira",
     outExtension({ format }) {
       return { js: format === "cjs" ? ".cjs" : format === "iife" ? ".js" : ".mjs" };
     },

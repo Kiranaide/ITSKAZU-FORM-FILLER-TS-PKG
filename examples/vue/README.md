@@ -1,7 +1,7 @@
 # Vue Example
 
 ```ts
-import { init } from "itskazu-form-filler";
+import { init } from "kazu-fira";
 
 init();
 ```

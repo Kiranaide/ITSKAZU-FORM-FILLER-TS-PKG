@@ -3,7 +3,9 @@ export function getEventTargetElement(event: Event): Element | null {
   return target instanceof Element ? target : null;
 }
 
-export function isFormField(el: Element | null): el is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
+export function isFormField(
+  el: Element | null,
+): el is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
   if (!el) {
     return false;
   }
@@ -21,9 +23,7 @@ export function matchesAnySelector(el: Element, selectors: string[]): boolean {
       if (el.matches(selector)) {
         return true;
       }
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   return false;

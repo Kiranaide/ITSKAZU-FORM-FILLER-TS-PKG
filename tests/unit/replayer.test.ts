@@ -140,7 +140,8 @@ describe("replayer", () => {
     const select = document.createElement("select");
     select.id = "roles";
     select.multiple = true;
-    select.innerHTML = '<option value="admin">Admin</option><option value="editor">Editor</option><option value="viewer">Viewer</option>';
+    select.innerHTML =
+      '<option value="admin">Admin</option><option value="editor">Editor</option><option value="viewer">Viewer</option>';
     document.body.append(select);
 
     const script = {

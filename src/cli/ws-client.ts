@@ -1,9 +1,9 @@
-import type { ToolboxMessage, ToolboxMessageType } from "./messages.js";
 import { EventBus } from "./event-bus.js";
+import type { ToolboxMessage, ToolboxMessageType } from "./messages.js";
 
 type WsEvents = {
-  connected: void;
-  disconnected: void;
+  connected: undefined;
+  disconnected: undefined;
   message: ToolboxMessage;
 };
 
@@ -36,7 +36,9 @@ export class WsClient {
   }
 
   send<T>(type: ToolboxMessageType, payload: T): void {
-    this.socket?.send(JSON.stringify({ type, payload, ts: Date.now() } satisfies ToolboxMessage<T>));
+    this.socket?.send(
+      JSON.stringify({ type, payload, ts: Date.now() } satisfies ToolboxMessage<T>),
+    );
   }
 
   private scheduleReconnect(): void {

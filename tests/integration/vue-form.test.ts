@@ -10,8 +10,6 @@ describe("vue integration", () => {
     input.id = "name";
     document.body.append(label, input);
 
-    expect(document.querySelector('label[for="name"]')?.textContent).toBe(
-      "Name",
-    );
+    expect(document.querySelector('label[for="name"]')?.textContent).toBe("Name");
   });
 });

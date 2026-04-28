@@ -7,6 +7,10 @@ export class LogStore {
     this.entries.push(entry);
     while (this.entries.length > this.limit) this.entries.shift();
   }
-  all(): LogEntry[] { return [...this.entries]; }
-  clear(): void { this.entries = []; }
+  all(): LogEntry[] {
+    return [...this.entries];
+  }
+  clear(): void {
+    this.entries = [];
+  }
 }

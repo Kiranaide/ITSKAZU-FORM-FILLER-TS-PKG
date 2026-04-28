@@ -130,7 +130,12 @@ describe("recorder", () => {
 
     const script = recorder.stop();
 
-    expect(script.actions.map((action) => action.type)).toEqual(["focus", "blur", "click", "submit"]);
+    expect(script.actions.map((action) => action.type)).toEqual([
+      "focus",
+      "blur",
+      "click",
+      "submit",
+    ]);
     expect(script.actions.every((action) => action.delay === 0)).toBe(true);
   });
 
@@ -140,7 +145,8 @@ describe("recorder", () => {
     const select = document.createElement("select");
     select.name = "roles";
     select.multiple = true;
-    select.innerHTML = '<option value="admin">Admin</option><option value="editor">Editor</option><option value="viewer">Viewer</option>';
+    select.innerHTML =
+      '<option value="admin">Admin</option><option value="editor">Editor</option><option value="viewer">Viewer</option>';
     document.body.append(select);
 
     const recorder = new Recorder({ root: document.body });

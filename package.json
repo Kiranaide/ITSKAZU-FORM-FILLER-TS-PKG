@@ -1,13 +1,13 @@
 {
-  "name": "itskazu-form-filler",
-  "version": "0.1.3",
-  "description": "Zero-dependency form recording and replay package for browser apps.",
+  "name": "kazu-fira",
+  "version": "1.0.0",
+  "description": "Framework-agnostic form recorder and replayer. Zero runtime dependencies.",
   "author": "ItsKazu",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "bin": {
-    "itskazu-form-filler": "./dist/cli.mjs"
+    "kazu-fira": "./dist/cli.mjs"
   },
   "exports": {
     ".": {
@@ -28,18 +28,24 @@
     "build": "tsup",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
     "release": "node scripts/release.mjs"
   },
-  "dependencies": {
-    "ws": "^8.20.0"
-  },
+  "dependencies": {},
   "devDependencies": {
+    "@biomejs/biome": "^2.2.6",
+    "@changesets/cli": "^2.29.7",
+    "@playwright/test": "^1.55.0",
     "@types/node": "^22.13.1",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.5",
     "jsdom": "^29.1.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.2",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "ws": "^8.20.0"
   },
   "files": [
     "dist"

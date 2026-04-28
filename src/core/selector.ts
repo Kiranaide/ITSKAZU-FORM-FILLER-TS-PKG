@@ -1,12 +1,7 @@
+import type { SelectorStrategy as FormSelectorStrategy } from "./schema";
 import type { ElementSelector, SelectorStrategy } from "./types";
 
-export const STRATEGY_PRIORITY = [
-  "id",
-  "name",
-  "data-testid",
-  "aria-label",
-  "css",
-] as const;
+export const STRATEGY_PRIORITY = ["id", "name", "data-testid", "aria-label", "css"] as const;
 
 export function extractSelectors(el: Element): ElementSelector {
   const strategies: SelectorStrategy[] = [];
@@ -76,6 +71,70 @@ export function resolveElement(
   return resolveThroughShadowDOM(selector);
 }
 
+export function toFormSelectorStrategy(selector: ElementSelector): FormSelectorStrategy {
+  const strategy = selector.strategies[0];
+  if (!strategy) {
+    return { kind: "css", value: "*" };
+  }
+
+  if (strategy.type === "id") {
+    return { kind: "id", value: strategy.value.replace(/^#/, "") };
+  }
+
+  if (strategy.type === "name") {
+    const m = strategy.value.match(/^\[name="(.+)"\]$/);
+    return { kind: "name", value: m?.[1] ?? strategy.value };
+  }
+
+  if (strategy.type === "aria-label") {
+    const m = strategy.value.match(/^\[aria-label="(.+)"\]$/);
+    return { kind: "aria", value: m?.[1] ?? strategy.value };
+  }
+
+  if (strategy.type === "data-testid") {
+    const m = strategy.value.match(/^\[([^=]+)="(.+)"\]$/);
+    return { kind: "data", attr: m?.[1] ?? "data-testid", value: m?.[2] ?? strategy.value };
+  }
+
+  return { kind: "css", value: strategy.value };
+}
+
+export function resolveByFormSelectorStrategy(
+  selector: FormSelectorStrategy,
+  root: Document | ShadowRoot = document,
+): Element | null {
+  const query =
+    selector.kind === "id"
+      ? `#${CSS.escape(selector.value)}`
+      : selector.kind === "name"
+        ? `[name="${selector.value}"]`
+        : selector.kind === "aria"
+          ? `[aria-label="${selector.value}"]`
+          : selector.kind === "data"
+            ? `[${selector.attr}="${selector.value}"]`
+            : selector.value;
+
+  try {
+    const direct = root.querySelector(query);
+    if (direct) {
+      return direct;
+    }
+  } catch {}
+
+  const allElements = root.querySelectorAll("*");
+  for (const el of allElements) {
+    if (!el.shadowRoot) {
+      continue;
+    }
+    const nested = resolveByFormSelectorStrategy(selector, el.shadowRoot);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+}
+
 function isDynamicId(id: string): boolean {
   return /^(:r\d|react-aria|ember\d|\d)/.test(id);
 }
@@ -88,9 +147,7 @@ function buildShortCSSSelector(el: Element): string {
     .slice(0, 2)
     .join(".");
 
-  return [tag, type && `[type="${type}"]`, classes && `.${classes}`]
-    .filter(Boolean)
-    .join("");
+  return [tag, type && `[type="${type}"]`, classes && `.${classes}`].filter(Boolean).join("");
 }
 
 function isDynamicClass(cls: string): boolean {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 function run(command, options = {}) {
   console.log(`\n$ ${command}`);
@@ -67,11 +68,24 @@ function main() {
   run("bun run build");
 
   const next = read(
-    `npm version ${bumpMap[args.bump]} -m "chore(release): bump version to %s"`,
+    `npm version ${bumpMap[args.bump]} -m "chore(release): bump version to %s"`
   );
 
   if (!args.noPush) {
     run("git push --follow-tags");
+  }
+
+  const required = [
+    "dist/index.mjs",
+    "dist/index.cjs",
+    "dist/index.d.ts",
+    "dist/cli.mjs",
+  ];
+
+  for (const f of required) {
+    if (!existsSync(f)) {
+      fail(`missing required dist file: ${f}`);
+    }
   }
 
   run("npm publish --access public");

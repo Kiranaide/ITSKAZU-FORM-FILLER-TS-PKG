@@ -1,8 +1,9 @@
-import { extractSelectors } from "./selector";
-import type { RecordedAction, RecordedScript, RecorderOptions } from "./types";
-import { nanoid } from "../utils/nanoid";
-import { getEventTargetElement, isFormField, matchesAnySelector } from "../utils/dom";
 import { watchOpenShadowRoots } from "../adapters/shadow-dom";
+import { getEventTargetElement, isFormField, matchesAnySelector } from "../utils/dom";
+import { nanoid } from "../utils/nanoid";
+import { FORMSCRIPT_VERSION, type FormScript, type FormScriptStep } from "./schema";
+import { extractSelectors, toFormSelectorStrategy } from "./selector";
+import type { RecordedAction, RecordedScript, RecorderOptions } from "./types";
 
 const DEFAULT_MASK_SELECTORS = [
   '[type="password"]',
@@ -11,24 +12,27 @@ const DEFAULT_MASK_SELECTORS = [
 ];
 
 export class Recorder {
+  private steps: FormScriptStep[] = [];
   private actions: RecordedAction[] = [];
   private startTime = 0;
   private lastActionTime = 0;
   private options: RecorderOptions;
   private controllers: AbortController[] = [];
-  private stopWatchingShadowRoots?: () => void;
+  private stopWatchingShadowRoots: (() => void) | undefined;
 
   constructor(options: RecorderOptions = {}) {
     this.options = options;
   }
 
   start(): void {
+    this.steps = [];
     this.actions = [];
     this.startTime = performance.now();
     this.lastActionTime = this.startTime;
 
     const root = this.options.root ?? document.body;
     this.attachListeners(root);
+    this.options.hooks?.onRecordStart?.();
 
     this.stopWatchingShadowRoots = watchOpenShadowRoots((shadowRoot) => {
       this.attachListeners(shadowRoot);
@@ -36,17 +40,32 @@ export class Recorder {
   }
 
   stop(): RecordedScript {
-    this.controllers.forEach((controller) => controller.abort());
+    this.controllers.forEach((controller) => {
+      controller.abort();
+    });
     this.controllers = [];
     this.stopWatchingShadowRoots?.();
     this.stopWatchingShadowRoots = undefined;
 
+    const now = Date.now();
+    const script: FormScript = {
+      version: FORMSCRIPT_VERSION,
+      id: nanoid(),
+      name: `Recording ${new Date(now).toISOString()}`,
+      createdAt: now,
+      updatedAt: now,
+      origin: location.origin,
+      steps: this.steps,
+    };
+    this.options.hooks?.onRecordStop?.(script);
     return {
-      version: "1",
-      name: `Recording ${new Date().toISOString()}`,
-      url: location.href,
-      createdAt: new Date().toISOString(),
-      userAgent: navigator.userAgent,
+      version: 2,
+      id: script.id,
+      name: script.name,
+      createdAt: script.createdAt,
+      updatedAt: script.updatedAt,
+      origin: script.origin,
+      steps: script.steps,
       actions: this.actions,
     };
   }
@@ -82,7 +101,11 @@ export class Recorder {
     });
   }
 
-  private capture(type: RecordedAction["type"], el: Element, value?: string | boolean | string[]): void {
+  private capture(
+    type: RecordedAction["type"],
+    el: Element,
+    value?: string | boolean | string[],
+  ): void {
     if (this.shouldIgnore(el)) {
       return;
     }
@@ -92,22 +115,54 @@ export class Recorder {
     this.lastActionTime = now;
 
     const selector = extractSelectors(el);
+    const baseTimestamp = Math.round(now - this.startTime);
+    const isMasked = this.isMasked(el);
+
+    let step: FormScriptStep | null = null;
+    if (type === "input" || type === "change") {
+      step = {
+        type: "input",
+        selector: toFormSelectorStrategy(selector),
+        value: typeof value === "string" ? value : "",
+        masked: isMasked,
+        timestamp: baseTimestamp,
+      };
+    } else if (type === "select") {
+      step = {
+        type: "select",
+        selector: toFormSelectorStrategy(selector),
+        value: Array.isArray(value) ? (value[0] ?? "") : String(value ?? ""),
+        timestamp: baseTimestamp,
+      };
+    } else if (type === "click" || type === "submit") {
+      step = {
+        type: "click",
+        selector: toFormSelectorStrategy(selector),
+        timestamp: baseTimestamp,
+      };
+    }
+
     const action: RecordedAction = {
       id: nanoid(),
       type,
       selector,
       value,
-      timestamp: now - this.startTime,
+      timestamp: baseTimestamp,
       delay: this.options.captureDelay === false ? 0 : delay,
-      metadata: {
-        url: location.href,
-        viewport: { w: window.innerWidth, h: window.innerHeight },
-        fieldLabel: selector.label,
-      },
     };
-
     this.actions.push(action);
     this.options.onAction?.(action);
+
+    if (!step) {
+      return;
+    }
+
+    const mapped = this.options.hooks?.onStep ? this.options.hooks.onStep(step) : step;
+    if (!mapped) {
+      return;
+    }
+
+    this.steps.push(mapped);
   }
 
   private shouldIgnore(el: Element): boolean {
@@ -136,7 +191,7 @@ export class Recorder {
 
     if (el instanceof HTMLSelectElement) {
       const values = Array.from(el.selectedOptions, (option) => option.value);
-      this.capture("select", el, el.multiple ? values : values[0] ?? "");
+      this.capture("select", el, el.multiple ? values : (values[0] ?? ""));
       return;
     }
 
