@@ -1,23 +1,17 @@
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
-import { brotliDecompress, gunzip, inflate } from "node:zlib";
 import { promisify } from "node:util";
+import { brotliDecompress, gunzip, inflate } from "node:zlib";
 import { injectToolbar } from "./injector.js";
-import type { CliOptions } from "./types.js";
 import { attachToolboxWs } from "./proxy-ws.js";
+import type { CliOptions } from "./types.js";
 
 const gunzipAsync = promisify(gunzip);
 const inflateAsync = promisify(inflate);
 const brotliAsync = promisify(brotliDecompress);
 
 const TOOLBOX_PATH = "/__toolbox/client.js";
-const COMMON_BINARY_TYPES = [
-  "image/",
-  "font/",
-  "application/octet-stream",
-  "application/pdf",
-];
 
 export async function createProxyServer(options: CliOptions): Promise<void> {
   const { appPort, port, workspace } = options;
@@ -52,41 +46,35 @@ export async function createProxyServer(options: CliOptions): Promise<void> {
     }
   });
 
-  attachToolboxWs(server, workspace);
+  await attachToolboxWs(server, workspace);
 
   server.on("upgrade", (req, socket, head) => {
     if (!req.url || req.url === "/__toolbox/ws") return;
-    const upstreamSocket = net.createConnection(
-      { host: upstreamHost, port: appPort },
-      () => {
-        const headers = [
-          `GET ${req.url} HTTP/1.1`,
-          `Host: ${upstreamHost}:${appPort}`,
-          "Connection: Upgrade",
-          "Upgrade: websocket",
-          ...Object.entries(req.headers)
-            .filter(
-              ([key]) =>
-                ![
-                  "connection",
-                  "upgrade",
-                  "host",
-                  "sec-websocket-key",
-                  "sec-websocket-version",
-                ].includes(key.toLowerCase()),
-            )
-            .map(
-              ([key, value]) =>
-                `${key}: ${Array.isArray(value) ? value.join(", ") : value}`,
-            ),
-          "",
-          "",
-        ];
-        upstreamSocket.write(headers.join("\r\n"));
-        if (head.length > 0) upstreamSocket.write(head);
-        socket.pipe(upstreamSocket).pipe(socket);
-      },
-    );
+    const upstreamSocket = net.createConnection({ host: upstreamHost, port: appPort }, () => {
+      const headers = [
+        `GET ${req.url} HTTP/1.1`,
+        `Host: ${upstreamHost}:${appPort}`,
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        ...Object.entries(req.headers)
+          .filter(
+            ([key]) =>
+              ![
+                "connection",
+                "upgrade",
+                "host",
+                "sec-websocket-key",
+                "sec-websocket-version",
+              ].includes(key.toLowerCase()),
+          )
+          .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : value}`),
+        "",
+        "",
+      ];
+      upstreamSocket.write(headers.join("\r\n"));
+      if (head.length > 0) upstreamSocket.write(head);
+      socket.pipe(upstreamSocket).pipe(socket);
+    });
     upstreamSocket.on("error", () => socket.destroy());
   });
 
@@ -106,39 +94,35 @@ async function proxyHttpRequest(
   delete headers.connection;
   delete headers["accept-encoding"];
 
-  const proxyReq = client.request(
-    target,
-    { method: req.method, headers },
-    async (proxyRes) => {
-      const responseHeaders = normalizeHeaders(proxyRes.headers);
-      const contentType = String(responseHeaders["content-type"] ?? "");
-      const contentEncoding = String(responseHeaders["content-encoding"] ?? "");
-      const shouldInject = req.method === "GET" && isHtmlResponse(contentType);
+  const proxyReq = client.request(target, { method: req.method, headers }, async (proxyRes) => {
+    const responseHeaders = normalizeHeaders(proxyRes.headers);
+    const contentType = String(responseHeaders["content-type"] ?? "");
+    const contentEncoding = String(responseHeaders["content-encoding"] ?? "");
+    const shouldInject = req.method === "GET" && isHtmlResponse(contentType);
 
-      if (!shouldInject) {
-        writeHead(res, proxyRes.statusCode ?? 200, responseHeaders);
-        proxyRes.pipe(res);
-        return;
-      }
-
-      const chunks: Buffer[] = [];
-      for await (const chunk of proxyRes) chunks.push(Buffer.from(chunk));
-      const decoded = await decodeBody(Buffer.concat(chunks), contentEncoding);
-      const injected = injectToolbar(decoded.toString("utf8"), {
-        frameworks: [],
-        port: proxyPort,
-        toolbarPath: "/__toolbox/client.js",
-      });
-      const payload = Buffer.from(injected, "utf8");
-      delete responseHeaders["content-encoding"];
-      delete responseHeaders["content-length"];
-      delete responseHeaders["x-frame-options"];
-      delete responseHeaders["content-security-policy"];
-      responseHeaders["content-length"] = String(payload.byteLength);
+    if (!shouldInject) {
       writeHead(res, proxyRes.statusCode ?? 200, responseHeaders);
-      res.end(payload);
-    },
-  );
+      proxyRes.pipe(res);
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of proxyRes) chunks.push(Buffer.from(chunk));
+    const decoded = await decodeBody(Buffer.concat(chunks), contentEncoding);
+    const injected = injectToolbar(decoded.toString("utf8"), {
+      frameworks: [],
+      port: proxyPort,
+      toolbarPath: "/__toolbox/client.js",
+    });
+    const payload = Buffer.from(injected, "utf8");
+    delete responseHeaders["content-encoding"];
+    delete responseHeaders["content-length"];
+    delete responseHeaders["x-frame-options"];
+    delete responseHeaders["content-security-policy"];
+    responseHeaders["content-length"] = String(payload.byteLength);
+    writeHead(res, proxyRes.statusCode ?? 200, responseHeaders);
+    res.end(payload);
+  });
 
   proxyReq.on("error", (error) => {
     if (res.headersSent) {
@@ -153,9 +137,7 @@ async function proxyHttpRequest(
   req.pipe(proxyReq);
 }
 
-function normalizeHeaders(
-  headers: http.IncomingHttpHeaders,
-): Record<string, string> {
+function normalizeHeaders(headers: http.IncomingHttpHeaders): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue;
@@ -180,8 +162,7 @@ function isHtmlResponse(contentType: string): boolean {
 async function decodeBody(body: Buffer, encoding: string): Promise<Buffer> {
   if (encoding.includes("br")) return Buffer.from(await brotliAsync(body));
   if (encoding.includes("gzip")) return Buffer.from(await gunzipAsync(body));
-  if (encoding.includes("deflate"))
-    return Buffer.from(await inflateAsync(body));
+  if (encoding.includes("deflate")) return Buffer.from(await inflateAsync(body));
   return body;
 }
 
@@ -191,11 +172,10 @@ function generateClientBundle(): string {
 
 function clientBundle(): void {
   const MOUNT_ATTR = "data-toolbox-mounted";
-  const STORAGE_KEY = "itskazu-form-filler:sessions:v2";
-  const LEGACY_KEY = "itskazu-form-filler:latest-recording";
+  const STORAGE_KEY = "kazu-fira:sessions:v2";
+  const LEGACY_KEY = "kazu-fira:latest-recording";
   const MAX_SESSIONS = 50;
-  const DYNAMIC_ID_PATTERN =
-    /(^|[-_:])(r[a-z0-9]+|react-aria|radix|headlessui|base-ui)([-_:]|$)/i;
+  const DYNAMIC_ID_PATTERN = /(^|[-_:])(r[a-z0-9]+|react-aria|radix|headlessui|base-ui)([-_:]|$)/i;
 
   type StepKind = "fill" | "check" | "click" | "keyboard";
   type Step = {
@@ -204,14 +184,14 @@ function clientBundle(): void {
     selectors: string[];
     displayName: string;
     tagName: string;
-    inputType?: string;
-    value?: string;
-    checked?: boolean;
+    inputType?: string | undefined;
+    value?: string | undefined;
+    checked?: boolean | undefined;
     ts: number;
-    elementKey?: string;
-    formKey?: string;
-    optionText?: string;
-    role?: string;
+    elementKey?: string | undefined;
+    formKey?: string | undefined;
+    optionText?: string | undefined;
+    role?: string | undefined;
   };
   type Session = {
     id: string;
@@ -240,26 +220,14 @@ function clientBundle(): void {
     return `<svg xmlns="http://www.w3.org/2000/svg" class="${className}" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path>${body}</svg>`;
   };
   const ICONS = {
-    chevronDown: tablerIcon(
-      `<path d="M6 9l6 6l6 -6"></path>`,
-      "icon-tabler-chevron-down",
-    ),
-    chevronRight: tablerIcon(
-      `<path d="M9 6l6 6l-6 6"></path>`,
-      "icon-tabler-chevron-right",
-    ),
-    record: tablerFillIcon(
-      `<circle cx="12" cy="12" r="3"></circle>`,
-      "icon-tabler-point",
-    ),
+    chevronDown: tablerIcon(`<path d="M6 9l6 6l6 -6"></path>`, "icon-tabler-chevron-down"),
+    chevronRight: tablerIcon(`<path d="M9 6l6 6l-6 6"></path>`, "icon-tabler-chevron-right"),
+    record: tablerFillIcon(`<circle cx="12" cy="12" r="3"></circle>`, "icon-tabler-point"),
     stop: tablerIcon(
       `<path d="M5 7a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z"></path>`,
       "icon-tabler-player-stop",
     ),
-    play: tablerIcon(
-      `<path d="M7 4v16l13 -8z"></path>`,
-      "icon-tabler-player-play",
-    ),
+    play: tablerIcon(`<path d="M7 4v16l13 -8z"></path>`, "icon-tabler-player-play"),
     scan: tablerIcon(
       `<path d="M4 7v-1a2 2 0 0 1 2 -2h2"></path><path d="M4 17v1a2 2 0 0 0 2 2h2"></path><path d="M16 4h2a2 2 0 0 1 2 2v1"></path><path d="M16 20h2a2 2 0 0 0 2 -2v-1"></path><path d="M5 12h14"></path>`,
       "icon-tabler-scan",
@@ -276,10 +244,7 @@ function clientBundle(): void {
       `<path d="M18 6l-12 12"></path><path d="M6 6l12 12"></path>`,
       "icon-tabler-x",
     ),
-    check: tablerIcon(
-      `<path d="M5 12l5 5l10 -10"></path>`,
-      "icon-tabler-check",
-    ),
+    check: tablerIcon(`<path d="M5 12l5 5l10 -10"></path>`, "icon-tabler-check"),
   };
   shadow.innerHTML = `<style>
 :host{all:initial}
@@ -413,47 +378,23 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   const activeEl = shadow.getElementById("toolbox-active") as HTMLElement;
   const logsEl = shadow.getElementById("toolbox-logs") as HTMLElement;
   const stateEl = shadow.getElementById("toolbox-state") as HTMLElement;
-  const collapseToggleBtn = shadow.getElementById(
-    "toolbox-collapse-toggle",
-  ) as HTMLButtonElement;
-  const recordBtn = shadow.getElementById(
-    "toolbox-record",
-  ) as HTMLButtonElement;
+  const collapseToggleBtn = shadow.getElementById("toolbox-collapse-toggle") as HTMLButtonElement;
+  const recordBtn = shadow.getElementById("toolbox-record") as HTMLButtonElement;
   const stopBtn = shadow.getElementById("toolbox-stop") as HTMLButtonElement;
   const runBtn = shadow.getElementById("toolbox-run") as HTMLButtonElement;
   const scanBtn = shadow.getElementById("toolbox-scan") as HTMLButtonElement;
   const saveBtn = shadow.getElementById("toolbox-save") as HTMLButtonElement;
-  const sessionsGrid = shadow.getElementById(
-    "toolbox-sessions-grid",
-  ) as HTMLElement;
-  const sessionsPaneEl = shadow.getElementById(
-    "toolbox-sessions-pane",
-  ) as HTMLElement;
-  const detailPaneEl = shadow.getElementById(
-    "toolbox-detail-pane",
-  ) as HTMLElement;
-  const sessionsCountEl = shadow.getElementById(
-    "toolbox-sessions-count",
-  ) as HTMLElement;
+  const sessionsGrid = shadow.getElementById("toolbox-sessions-grid") as HTMLElement;
+  const sessionsPaneEl = shadow.getElementById("toolbox-sessions-pane") as HTMLElement;
+  const detailPaneEl = shadow.getElementById("toolbox-detail-pane") as HTMLElement;
+  const sessionsCountEl = shadow.getElementById("toolbox-sessions-count") as HTMLElement;
   const lastRunEl = shadow.getElementById("toolbox-last-run") as HTMLElement;
-  const stepCounterEl = shadow.getElementById(
-    "toolbox-step-counter",
-  ) as HTMLElement;
-  const activeInfoEl = shadow.getElementById(
-    "toolbox-active-info",
-  ) as HTMLElement;
-  const activeTitleEl = shadow.getElementById(
-    "toolbox-active-title",
-  ) as HTMLElement;
-  const runningBadgeEl = shadow.getElementById(
-    "toolbox-running-badge",
-  ) as HTMLElement;
-  const progressBarEl = shadow.getElementById(
-    "toolbox-progress-bar",
-  ) as HTMLElement;
-  const newSessionBtn = shadow.getElementById(
-    "toolbox-new-session",
-  ) as HTMLButtonElement;
+  const stepCounterEl = shadow.getElementById("toolbox-step-counter") as HTMLElement;
+  const activeInfoEl = shadow.getElementById("toolbox-active-info") as HTMLElement;
+  const activeTitleEl = shadow.getElementById("toolbox-active-title") as HTMLElement;
+  const runningBadgeEl = shadow.getElementById("toolbox-running-badge") as HTMLElement;
+  const progressBarEl = shadow.getElementById("toolbox-progress-bar") as HTMLElement;
+  const newSessionBtn = shadow.getElementById("toolbox-new-session") as HTMLButtonElement;
 
   const appEl = shadow.querySelector(".app") as HTMLElement | null;
 
@@ -473,7 +414,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     collapsed: false,
   };
 
-  const COLLAPSE_KEY = "itskazu-form-filler:toolbox:collapsed:v1";
+  const COLLAPSE_KEY = "kazu-fira:toolbox:collapsed:v1";
   const readCollapsed = (): boolean => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === "1";
@@ -490,9 +431,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   const applyCollapsedUi = () => {
     if (!appEl) return;
     appEl.classList.toggle("collapsed", state.collapsed);
-    collapseToggleBtn.innerHTML = state.collapsed
-      ? ICONS.chevronRight
-      : ICONS.chevronDown;
+    collapseToggleBtn.innerHTML = state.collapsed ? ICONS.chevronRight : ICONS.chevronDown;
     collapseToggleBtn.title = state.collapsed ? "Expand" : "Collapse";
   };
 
@@ -513,14 +452,9 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   const isDynamicId = (id: string) => DYNAMIC_ID_PATTERN.test(id);
 
   const isSensitiveField = (el: Element): boolean => {
-    if (el instanceof HTMLInputElement && el.type.toLowerCase() === "password")
-      return true;
+    if (el instanceof HTMLInputElement && el.type.toLowerCase() === "password") return true;
     const ac = (el.getAttribute("autocomplete") ?? "").toLowerCase();
-    return (
-      ac.includes("cc-") ||
-      ac.includes("credit-card") ||
-      ac.includes("one-time-code")
-    );
+    return ac.includes("cc-") || ac.includes("credit-card") || ac.includes("one-time-code");
   };
 
   const text = (value: string | null | undefined): string =>
@@ -539,9 +473,9 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       const tag = node.tagName.toLowerCase();
       const parent: HTMLElement | null = node.parentElement;
       if (!parent) break;
-      const siblings = Array.from(
-        parent.children as HTMLCollectionOf<Element>,
-      ).filter((child: Element) => child.tagName === node!.tagName);
+      const siblings = Array.from(parent.children as HTMLCollectionOf<Element>).filter(
+        (child: Element) => child.tagName === node?.tagName,
+      );
       const index = siblings.indexOf(node) + 1;
       segments.unshift(`${tag}:nth-of-type(${Math.max(index, 1)})`);
       node = parent;
@@ -593,11 +527,9 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     const role = text(el.getAttribute("role")).toLowerCase();
     const slot = text(el.getAttribute("data-slot")).toLowerCase();
     const popup = text(el.getAttribute("aria-haspopup")).toLowerCase();
-    if (role === "option" || role === "combobox" || role === "listbox")
-      return true;
+    if (role === "option" || role === "combobox" || role === "listbox") return true;
     if (popup === "listbox") return true;
-    if (slot === "trigger" || slot === "item" || slot.includes("select"))
-      return true;
+    if (slot === "trigger" || slot === "item" || slot.includes("select")) return true;
     if (text(el.getAttribute("data-value"))) return true;
     return Boolean(
       el.closest(
@@ -609,18 +541,10 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   const isRecordableClickTarget = (el: Element): boolean => {
     if (!(el instanceof HTMLElement)) return false;
     if (!isVisible(el) || !isInteractableControl(el)) return false;
-    if (
-      el.getAttribute("aria-hidden") === "true" ||
-      el.closest("[aria-hidden='true']")
-    )
+    if (el.getAttribute("aria-hidden") === "true" || el.closest("[aria-hidden='true']"))
       return false;
     const role = text(el.getAttribute("role")).toLowerCase();
-    if (
-      role === "presentation" ||
-      role === "none" ||
-      role === "tablist" ||
-      role === "toolbar"
-    )
+    if (role === "presentation" || role === "none" || role === "tablist" || role === "toolbar")
       return false;
     if (isNativeFormControl(el)) return true;
     if (isSelectSemanticTarget(el)) return true;
@@ -632,9 +556,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     if (!(el instanceof HTMLElement)) return "";
     const htmlEl = el as HTMLElement;
     if ("labels" in htmlEl) {
-      const labels = (
-        htmlEl as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-      ).labels;
+      const labels = (htmlEl as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).labels;
       if (labels && labels.length > 0) {
         for (const label of Array.from(labels)) {
           const val = text(label.textContent);
@@ -654,8 +576,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     const placeholder = text(el.getAttribute("placeholder"));
     const name = text(el.getAttribute("name"));
     const tagName = el.tagName.toLowerCase();
-    const inputType =
-      el instanceof HTMLInputElement ? el.type.toLowerCase() : "";
+    const inputType = el instanceof HTMLInputElement ? el.type.toLowerCase() : "";
     const best = label || aria || placeholder || name;
     if (best) return `${best} (${tagName}${inputType ? `[${inputType}]` : ""})`;
     return `${tagName}${inputType ? `[${inputType}]` : ""}`;
@@ -672,32 +593,24 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     const role = text(el.getAttribute("role")).toLowerCase();
     const slot = text(el.getAttribute("data-slot")).toLowerCase();
     const dataValue = text(el.getAttribute("data-value"));
-    const type =
-      el instanceof HTMLInputElement ? text(el.type.toLowerCase()) : "";
+    const type = el instanceof HTMLInputElement ? text(el.type.toLowerCase()) : "";
     const isChoice =
-      el instanceof HTMLInputElement &&
-      (el.type === "radio" || el.type === "checkbox");
+      el instanceof HTMLInputElement && (el.type === "radio" || el.type === "checkbox");
     if (testId) selectors.push(`[data-testid="${escapeAttrValue(testId)}"]`);
     if (id && !isDynamicId(id)) selectors.push(`#${CSS.escape(id)}`);
     if (name) selectors.push(`${tag}[name="${escapeAttrValue(name)}"]`);
     if (aria) selectors.push(`${tag}[aria-label="${escapeAttrValue(aria)}"]`);
     if (role) selectors.push(`${tag}[role="${escapeAttrValue(role)}"]`);
     if (role && aria)
-      selectors.push(
-        `[role="${escapeAttrValue(role)}"][aria-label="${escapeAttrValue(aria)}"]`,
-      );
+      selectors.push(`[role="${escapeAttrValue(role)}"][aria-label="${escapeAttrValue(aria)}"]`);
     if (role === "option" && dataValue)
-      selectors.push(
-        `[role="option"][data-value="${escapeAttrValue(dataValue)}"]`,
-      );
+      selectors.push(`[role="option"][data-value="${escapeAttrValue(dataValue)}"]`);
     if (slot && dataValue)
       selectors.push(
         `[data-slot="${escapeAttrValue(slot)}"][data-value="${escapeAttrValue(dataValue)}"]`,
       );
-    if (dataValue)
-      selectors.push(`[data-value="${escapeAttrValue(dataValue)}"]`);
-    if (placeholder)
-      selectors.push(`${tag}[placeholder="${escapeAttrValue(placeholder)}"]`);
+    if (dataValue) selectors.push(`[data-value="${escapeAttrValue(dataValue)}"]`);
+    if (placeholder) selectors.push(`${tag}[placeholder="${escapeAttrValue(placeholder)}"]`);
     selectors.push(cssPath(el));
     if (tag === "input" && type)
       selectors.push(
@@ -709,8 +622,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     return Array.from(new Set(selectors));
   };
 
-  const primarySelectorOf = (selectors: string[]): string =>
-    selectors[0] ?? "*";
+  const primarySelectorOf = (selectors: string[]): string => selectors[0] ?? "*";
 
   const resolve = (selectors: string[], formKey?: string): Element | null => {
     for (const selector of selectors) {
@@ -721,15 +633,9 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
           ? matched.filter((node) => formKeyOf(node) === formKey)
           : matched;
         const visibleMatched = formMatched.filter((node) => isVisible(node));
-        const interactableMatched = visibleMatched.filter((node) =>
-          isInteractableControl(node),
-        );
+        const interactableMatched = visibleMatched.filter((node) => isInteractableControl(node));
         const pick =
-          interactableMatched[0] ??
-          visibleMatched[0] ??
-          formMatched[0] ??
-          matched[0] ??
-          null;
+          interactableMatched[0] ?? visibleMatched[0] ?? formMatched[0] ?? matched[0] ?? null;
         if (pick) return pick;
       } catch {}
     }
@@ -741,9 +647,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Session[];
-        return Array.isArray(parsed)
-          ? parsed.filter((it) => Array.isArray(it?.steps))
-          : [];
+        return Array.isArray(parsed) ? parsed.filter((it) => Array.isArray(it?.steps)) : [];
       }
       const legacy = localStorage.getItem(LEGACY_KEY);
       if (!legacy) return [];
@@ -763,9 +667,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
         userAgent: navigator.userAgent,
         steps: steps.map((step, idx) => ({
           type:
-            step.type === "check" ||
-            step.type === "click" ||
-            step.type === "keyboard"
+            step.type === "check" || step.type === "click" || step.type === "keyboard"
               ? step.type
               : "fill",
           selector: step.selector,
@@ -789,15 +691,8 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     localStorage.setItem(STORAGE_KEY, JSON.stringify(bounded));
   };
 
-  const sessionOptionLabel = (session: Session): string => {
-    const at = new Date(session.createdAt).toLocaleTimeString();
-    return `${session.name} (${session.steps.length} steps, ${at})`;
-  };
-
   const getSessions = () =>
-    parseSessions().sort(
-      (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
-    );
+    parseSessions().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
   const formatLastRun = (dateStr: string): string => {
     if (!dateStr) return "Never";
@@ -833,10 +728,8 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
 
     for (const session of sessions) {
       const card = document.createElement("div");
-      card.className =
-        "session-card" +
-        (state.currentSessionId === session.id ? " active" : "");
-      card.dataset.sessionId = session.id;
+      card.className = `session-card${state.currentSessionId === session.id ? " active" : ""}`;
+      card.setAttribute("data-session-id", session.id);
 
       const isRenaming = state.renamingId === session.id;
       const nameEl = isRenaming
@@ -865,15 +758,9 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
         selectSession(session.id);
       });
 
-      const renameBtn = card.querySelector(
-        "[data-action='rename']",
-      ) as HTMLButtonElement;
-      const runActionBtn = card.querySelector(
-        "[data-action='run']",
-      ) as HTMLButtonElement;
-      const deleteBtn = card.querySelector(
-        "[data-action='delete']",
-      ) as HTMLButtonElement;
+      const renameBtn = card.querySelector("[data-action='rename']") as HTMLButtonElement;
+      const runActionBtn = card.querySelector("[data-action='run']") as HTMLButtonElement;
+      const deleteBtn = card.querySelector("[data-action='delete']") as HTMLButtonElement;
 
       renameBtn?.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -894,9 +781,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
 
       if (isRenaming) {
         setTimeout(() => {
-          const inp = shadow.getElementById(
-            `rename-${session.id}`,
-          ) as HTMLInputElement;
+          const inp = shadow.getElementById(`rename-${session.id}`) as HTMLInputElement;
           if (inp) {
             inp.focus();
             inp.select();
@@ -992,14 +877,10 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     activeTitleEl.textContent = session.name;
     stepCounterEl.textContent = `${session.steps.length} steps`;
 
-    const pct =
-      runningStep >= 0
-        ? Math.round((runningStep / session.steps.length) * 100)
-        : 0;
+    const pct = runningStep >= 0 ? Math.round((runningStep / session.steps.length) * 100) : 0;
     progressBarEl.style.width = `${pct}%`;
 
-    runningBadgeEl.style.display =
-      state.runningSessionId === session.id ? "inline-flex" : "none";
+    runningBadgeEl.style.display = state.runningSessionId === session.id ? "inline-flex" : "none";
 
     logsEl.innerHTML = "";
     if (session.steps.length === 0) {
@@ -1024,9 +905,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       div.className = `log-line ${cls}`;
       const displayText = step.displayName || step.selector;
       const targetSelector = forDisplay(
-        primarySelectorOf(
-          step.selectors?.length ? step.selectors : [step.selector],
-        ),
+        primarySelectorOf(step.selectors?.length ? step.selectors : [step.selector]),
       );
       div.innerHTML = `<span class="log-icon">${icon}</span><span>${displayText} → ${targetSelector}</span>`;
       logsEl.appendChild(div);
@@ -1038,8 +917,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   };
 
   const saveSession = (name: string, steps: Step[]) => {
-    const sanitizedName =
-      text(name) || `Session ${new Date().toLocaleString()}`;
+    const sanitizedName = text(name) || `Session ${new Date().toLocaleString()}`;
     const session: Session = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       schemaVersion: "2",
@@ -1062,17 +940,13 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   };
 
   const currentSessionSteps = (): Step[] => {
-    const session = getSessions().find(
-      (it) => it.id === state.currentSessionId,
-    );
+    const session = getSessions().find((it) => it.id === state.currentSessionId);
     return session?.steps ?? [];
   };
 
   const snapshot = () => {
     const fields = Array.from(
-      document.querySelectorAll(
-        "input,select,textarea,[contenteditable='true']",
-      ),
+      document.querySelectorAll("input,select,textarea,[contenteditable='true']"),
     ).filter((el) => el instanceof HTMLElement);
     countEl.textContent = String(fields.length);
     errorsEl.textContent = String(state.errors);
@@ -1127,11 +1001,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       )
     )
       return;
-    if (
-      el instanceof HTMLInputElement &&
-      (el.type === "checkbox" || el.type === "radio")
-    )
-      return;
+    if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) return;
     const selectors = selectorCandidates(el);
     const rawValue = "value" in el ? el.value : "";
     const value = rawValue;
@@ -1141,8 +1011,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       selectors,
       displayName: buildDisplayName(el),
       tagName: el.tagName.toLowerCase(),
-      inputType:
-        el instanceof HTMLInputElement ? el.type.toLowerCase() : undefined,
+      inputType: el instanceof HTMLInputElement ? el.type.toLowerCase() : undefined,
       value,
       ts: Date.now(),
       elementKey: elementKey(el),
@@ -1176,12 +1045,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       log(`capture select: ${step.displayName}=${step.value ?? ""}`);
       return;
     }
-    if (
-      !(
-        el instanceof HTMLInputElement &&
-        (el.type === "checkbox" || el.type === "radio")
-      )
-    )
+    if (!(el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")))
       return;
     const selectors = selectorCandidates(el);
     const step: Step = {
@@ -1198,9 +1062,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     };
     pushStep(step);
     state.lastRecordedAt = Date.now();
-    log(
-      `capture ${el.type.toLowerCase()}: ${step.displayName}=${String(el.checked)}`,
-    );
+    log(`capture ${el.type.toLowerCase()}: ${step.displayName}=${String(el.checked)}`);
   };
 
   const onClick = (event: Event) => {
@@ -1209,17 +1071,12 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     if (!(target instanceof Element)) return;
     const interactiveSelector =
       "input,select,textarea,button,a,[role='button'],[role='option'],[role='combobox'],[aria-haspopup='listbox'],[data-slot='trigger'],[data-slot='item'],[data-value]";
-    const path =
-      typeof event.composedPath === "function" ? event.composedPath() : [];
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
 
     for (const node of path) {
       if (!(node instanceof HTMLElement)) continue;
       const rootNode = node.getRootNode();
-      if (
-        rootNode === shadow ||
-        node.id === "__toolbox-root" ||
-        node.closest("#__toolbox-root")
-      ) {
+      if (rootNode === shadow || node.id === "__toolbox-root" || node.closest("#__toolbox-root")) {
         return;
       }
     }
@@ -1231,17 +1088,12 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
         break;
       }
     }
-    const clickTarget =
-      clickTargetFromPath ?? target.closest(interactiveSelector);
+    const clickTarget = clickTargetFromPath ?? target.closest(interactiveSelector);
     if (!(clickTarget instanceof Element)) return;
     if (!isRecordableClickTarget(clickTarget)) return;
     const role = clickTarget.getAttribute("role") ?? "";
     const slot = clickTarget.getAttribute("data-slot") ?? "";
-    if (
-      clickTarget.getAttribute("aria-hidden") === "true" ||
-      role === "presentation"
-    )
-      return;
+    if (clickTarget.getAttribute("aria-hidden") === "true" || role === "presentation") return;
     if (clickTarget.tagName.toLowerCase() === "div" && !role && !slot) return;
     if (
       clickTarget instanceof HTMLInputElement &&
@@ -1251,9 +1103,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     const selectors = selectorCandidates(clickTarget);
 
     const optionText =
-      role === "option" || slot === "item"
-        ? text(clickTarget.textContent)
-        : undefined;
+      role === "option" || slot === "item" ? text(clickTarget.textContent) : undefined;
     const step: Step = {
       type: "click",
       selector: primarySelectorOf(selectors),
@@ -1335,13 +1185,8 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   const replay = async () => {
     const savedSteps = currentSessionSteps();
     const hasFreshInMemory =
-      state.steps.length > 0 &&
-      state.lastRecordedAt > Date.now() - 5 * 60 * 1000;
-    const steps = hasFreshInMemory
-      ? state.steps
-      : savedSteps.length
-        ? savedSteps
-        : state.steps;
+      state.steps.length > 0 && state.lastRecordedAt > Date.now() - 5 * 60 * 1000;
+    const steps = hasFreshInMemory ? state.steps : savedSteps.length ? savedSteps : state.steps;
     if (!steps.length) {
       log("no recording to run");
       return;
@@ -1374,8 +1219,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       node.click();
     };
 
-    const sleep = (ms: number): Promise<void> =>
-      new Promise((done) => window.setTimeout(done, ms));
+    const sleep = (ms: number): Promise<void> => new Promise((done) => window.setTimeout(done, ms));
 
     const reactSelectIndexOfStep = (step: Step): string => {
       const candidates = [step.selector, ...(step.selectors ?? [])];
@@ -1400,9 +1244,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       const input = document.getElementById(`react-select-${index}-input`);
       if (input instanceof HTMLElement) {
         input.focus();
-        const control = input.closest(
-          "[class*='control']",
-        ) as HTMLElement | null;
+        const control = input.closest("[class*='control']") as HTMLElement | null;
         if (control) {
           clickWithPointerEvents(control);
         } else {
@@ -1410,9 +1252,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
         }
         return true;
       }
-      const valueContainer = document.getElementById(
-        `react-select-${index}-value`,
-      );
+      const valueContainer = document.getElementById(`react-select-${index}-value`);
       if (valueContainer instanceof HTMLElement) {
         clickWithPointerEvents(valueContainer);
         return true;
@@ -1448,9 +1288,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
       const top = document.elementFromPoint(x, y);
-      return Boolean(
-        top && (top === el || el.contains(top) || top.contains(el)),
-      );
+      return Boolean(top && (top === el || el.contains(top) || top.contains(el)));
     };
 
     const findOptionByText = (
@@ -1460,23 +1298,20 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     ): HTMLElement | null => {
       const roots = visiblePopupRoots();
       const rootOptions = roots.flatMap((root) =>
-        Array.from(
-          root.querySelectorAll("[role='option'], [data-slot='item']"),
-        ),
+        Array.from(root.querySelectorAll("[role='option'], [data-slot='item']")),
       );
       const fallbackOptions = Array.from(
         document.querySelectorAll("[role='option'], [data-slot='item']"),
       );
-      const options = (
-        rootOptions.length ? rootOptions : fallbackOptions
-      ).filter((node) => node instanceof HTMLElement) as HTMLElement[];
+      const options = (rootOptions.length ? rootOptions : fallbackOptions).filter(
+        (node) => node instanceof HTMLElement,
+      ) as HTMLElement[];
       for (const option of options) {
         if (onlyVisible && !isVisible(option)) continue;
         if (isDisabledOption(option)) continue;
         if (reactSelectIndex) {
           const id = option.id ?? "";
-          if (id && !id.startsWith(`react-select-${reactSelectIndex}-option-`))
-            continue;
+          if (id && !id.startsWith(`react-select-${reactSelectIndex}-option-`)) continue;
         }
         if (text(option.textContent) === label) return option;
       }
@@ -1486,12 +1321,10 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     const openSelectPopup = (): boolean => {
       const triggerSelector =
         "[role='combobox'],button[aria-haspopup='listbox'],[data-slot='select-trigger'],[data-slot='trigger'][aria-haspopup='listbox'],[data-state][aria-haspopup='listbox']";
-      const triggers = Array.from(
-        document.querySelectorAll(triggerSelector),
-      ).filter((node) => node instanceof HTMLElement) as HTMLElement[];
-      const trigger = triggers.find(
-        (node) => isVisible(node) && isInteractableControl(node),
-      );
+      const triggers = Array.from(document.querySelectorAll(triggerSelector)).filter(
+        (node) => node instanceof HTMLElement,
+      ) as HTMLElement[];
+      const trigger = triggers.find((node) => isVisible(node) && isInteractableControl(node));
       if (!trigger) return false;
       clickWithPointerEvents(trigger);
       return true;
@@ -1500,11 +1333,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     const optionLooksSelected = (option: HTMLElement): boolean => {
       if (option.getAttribute("aria-selected") === "true") return true;
       const dataState = text(option.getAttribute("data-state")).toLowerCase();
-      if (
-        dataState === "checked" ||
-        dataState === "active" ||
-        dataState === "selected"
-      )
+      if (dataState === "checked" || dataState === "active" || dataState === "selected")
         return true;
       return option.hasAttribute("data-selected");
     };
@@ -1515,9 +1344,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       if (listbox instanceof HTMLElement) return isVisible(listbox);
       const input = document.getElementById(`react-select-${index}-input`);
       if (input instanceof HTMLElement) {
-        const expanded = text(
-          input.getAttribute("aria-expanded"),
-        ).toLowerCase();
+        const expanded = text(input.getAttribute("aria-expanded")).toLowerCase();
         if (expanded === "true") return true;
       }
       return false;
@@ -1533,13 +1360,10 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       if (optionId) {
         const exact = document.getElementById(optionId);
         if (exact instanceof HTMLElement) {
-          if ((!onlyVisible || isVisible(exact)) && !isDisabledOption(exact))
-            return exact;
+          if ((!onlyVisible || isVisible(exact)) && !isDisabledOption(exact)) return exact;
         }
       }
-      const byText = step.optionText
-        ? findOptionByText(step.optionText, onlyVisible, index)
-        : null;
+      const byText = step.optionText ? findOptionByText(step.optionText, onlyVisible, index) : null;
       if (byText) return byText;
       return null;
     };
@@ -1565,15 +1389,13 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
           await sleep(20);
           if (!option.isConnected) return true;
           if (optionLooksSelected(option)) return true;
-          if (reactSelectIndex && !isReactSelectMenuOpen(reactSelectIndex))
-            return true;
+          if (reactSelectIndex && !isReactSelectMenuOpen(reactSelectIndex)) return true;
         }
         if (optionLooksSelected(option)) return true;
         option.click();
         await sleep(30);
         if (optionLooksSelected(option)) return true;
-        if (reactSelectIndex && !isReactSelectMenuOpen(reactSelectIndex))
-          return true;
+        if (reactSelectIndex && !isReactSelectMenuOpen(reactSelectIndex)) return true;
       }
       return false;
     };
@@ -1581,14 +1403,14 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
       if (sessionId && state.runningSessionId !== sessionId) break;
 
-      const step = steps[stepIndex]!;
+      const step = steps[stepIndex];
+      if (!step) {
+        continue;
+      }
       state.runStep = stepIndex;
       renderDetail(stepIndex);
 
-      if (
-        step.selector.includes("#toolbox-") ||
-        step.selector.includes("#__toolbox-root")
-      ) {
+      if (step.selector.includes("#toolbox-") || step.selector.includes("#__toolbox-root")) {
         continue;
       }
       if (step.tagName === "div" && !step.role && !step.optionText) {
@@ -1597,9 +1419,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       if (
         step.type === "click" &&
         step.optionText &&
-        (step.role === "option" ||
-          step.tagName === "li" ||
-          step.tagName === "div")
+        (step.role === "option" || step.tagName === "li" || step.tagName === "div")
       ) {
         const reactSelectIndex = reactSelectIndexOfStep(step);
         if (reactSelectIndex) {
@@ -1644,10 +1464,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
           }
         }
       }
-      const el = resolve(
-        step.selectors?.length ? step.selectors : [step.selector],
-        step.formKey,
-      );
+      const el = resolve(step.selectors?.length ? step.selectors : [step.selector], step.formKey);
       if (!(el instanceof HTMLElement)) {
         state.errors += 1;
         log(`missing: ${step.displayName || step.selector}`);
@@ -1677,14 +1494,11 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
               ? HTMLSelectElement.prototype
               : HTMLInputElement.prototype;
         const setter =
-          "value" in proto
-            ? Object.getOwnPropertyDescriptor(proto, "value")?.set
-            : undefined;
+          "value" in proto ? Object.getOwnPropertyDescriptor(proto, "value")?.set : undefined;
         setter?.call(el, step.value ?? "");
         if (("value" in el ? el.value : "") !== (step.value ?? ""))
-          (
-            el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-          ).value = step.value ?? "";
+          (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value =
+            step.value ?? "";
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
         if (document.activeElement === el && typeof el.blur === "function") {
@@ -1713,9 +1527,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       } else if (step.type === "click") {
         if (
           step.optionText &&
-          (step.role === "option" ||
-            step.tagName === "li" ||
-            step.tagName === "div")
+          (step.role === "option" || step.tagName === "li" || step.tagName === "div")
         ) {
           const idx = reactSelectIndexOfStep(step);
           const optionNode = idx
@@ -1757,10 +1569,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
 
   const patchHistory = (key: "pushState" | "replaceState") => {
     const original = history[key];
-    history[key] = function (
-      this: History,
-      ...args: Parameters<History[typeof key]>
-    ) {
+    history[key] = function (this: History, ...args: Parameters<History[typeof key]>) {
       const result = original.apply(this, args);
       window.dispatchEvent(new Event("toolbox:navigate"));
       return result;
@@ -1807,9 +1616,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       log("nothing to save");
       return;
     }
-    const name =
-      window.prompt("Session name", `Session ${new Date().toLocaleString()}`) ??
-      "";
+    const name = window.prompt("Session name", `Session ${new Date().toLocaleString()}`) ?? "";
     saveSession(name, [...state.steps]);
   });
   newSessionBtn.addEventListener("click", addNewSession);

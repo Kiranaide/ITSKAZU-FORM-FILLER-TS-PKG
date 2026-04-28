@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
+import { detectDevServerPort, detectFrameworks } from "./detector.js";
 import { createProxyServer } from "./proxy.js";
-import { detectFrameworks, detectDevServerPort } from "./detector.js";
 
 interface CliArgs {
   port: string;
@@ -16,17 +16,20 @@ interface CliArgs {
 }
 
 function printBanner(): void {
-  console.log(`
+  console.log(
+    `
 ╔═══════════════════════════════════════════╗
-║     itskazu-form-filler v0.1.0            ║
+║     kazu-fira v1.0.0                      ║
 ║     Universal Form Recorder & Replayer    ║
 ╚═══════════════════════════════════════════╝
-  `.trim());
+  `.trim(),
+  );
 }
 
 function printHelp(): void {
-  console.log(`
-Usage: itskazu-form-filler [options] [app-port]
+  console.log(
+    `
+Usage: kazu-fira [options] [app-port]
 
 Proxy Mode (inject into running app):
   [app-port]              Port of your dev app (positional)
@@ -43,18 +46,19 @@ Options:
 
 Examples:
   # Proxy to localhost:5173 (Vite default)
-  npx itskazu-form-filler 5173
-  npx itskazu-form-filler -a 5173
+  npx kazu-fira 5173
+  npx kazu-fira -a 5173
 
   # Proxy to localhost:3000 (Next.js default)
-  npx itskazu-form-filler 3000
+  npx kazu-fira 3000
 
   # Custom toolbar port
-  npx itskazu-form-filler 5173 -p 4000
+  npx kazu-fira 5173 -p 4000
 
   # Custom host (for containers/remote)
-  npx itskazu-form-filler 5173 --host 192.168.1.100
-  `.trim());
+  npx kazu-fira 5173 --host 192.168.1.100
+  `.trim(),
+  );
 }
 
 async function runCli(args: string[]): Promise<void> {
@@ -110,15 +114,15 @@ async function runCli(args: string[]): Promise<void> {
  ❌ Could not auto-detect dev server port
 
  Please specify manually:
-   npx itskazu-form-filler 5173
-   npx itskazu-form-filler -a 3000
+   npx kazu-fira 5173
+   npx kazu-fira -a 3000
       `);
       printHelp();
       process.exit(1);
     }
   }
 
-  if (isNaN(appPort) || isNaN(port)) {
+  if (Number.isNaN(appPort) || Number.isNaN(port)) {
     console.error("❌ Error: Port must be a valid number");
     process.exit(1);
   }

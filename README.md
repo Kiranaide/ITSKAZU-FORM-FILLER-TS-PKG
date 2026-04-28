@@ -1,4 +1,4 @@
-# ItsKazu-Form-Filler
+# kazu-fira
 
 Framework-agnostic form recorder/replayer for browser apps, with optional dev toolbar + proxy CLI.
 
@@ -13,7 +13,9 @@ Framework-agnostic form recorder/replayer for browser apps, with optional dev to
 ## Install
 
 ```bash
-bun install
+npm install kazu-fira
+# or
+bun add kazu-fira
 ```
 
 ## Build and test
@@ -29,8 +31,8 @@ bun test
 - ESM: `dist/index.mjs`
 - CJS: `dist/index.cjs`
 - Types: `dist/index.d.ts`
-- Browser global (IIFE): `dist/index.js` (`ItskazuFormFiller`)
-- CLI: `dist/cli.mjs` (bin: `itskazu-form-filler`)
+- Browser global (IIFE): `dist/index.js` (`KazuFira`)
+- CLI: `dist/cli.mjs` (bin: `kazu-fira`)
 
 ## Public API
 
@@ -48,7 +50,7 @@ From `src/index.ts`:
 ## Quick usage
 
 ```ts
-import { Recorder, Replayer } from "itskazu-form-filler";
+import { Recorder, Replayer } from "kazu-fira";
 
 const recorder = new Recorder();
 recorder.start();
@@ -66,9 +68,9 @@ await replayer.play();
 Inject toolbar client into running dev app via local proxy:
 
 ```bash
-npx itskazu-form-filler 5173
+npx kazu-fira 5173
 # or
-npx itskazu-form-filler -a 5173 -p 3100
+npx kazu-fira -a 5173 -p 3100
 ```
 
 Useful flags:
@@ -112,4 +114,4 @@ tests/
 ## Notes
 
 - Package intent remains library-first.
-- Current `ws` dependency used for CLI/dev tooling path.
+- `ws` loaded dynamically for CLI/dev tooling path only.

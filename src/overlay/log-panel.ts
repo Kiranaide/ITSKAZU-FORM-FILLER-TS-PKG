@@ -9,7 +9,10 @@ export interface LogEntry {
   ts: number;
 }
 
-export function mountLogPanel(root: ShadowRoot, onClear: () => void): { add(entry: LogEntry): void } {
+export function mountLogPanel(
+  root: ShadowRoot,
+  onClear: () => void,
+): { add(entry: LogEntry): void } {
   const host = document.createElement("div");
   host.className = "log-panel";
   host.innerHTML = `<div class="log-head"><strong>Logs</strong><button data-clear>Clear</button></div><div data-list></div>`;

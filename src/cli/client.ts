@@ -21,10 +21,15 @@ export function mountToolbox(): void {
 
   const rescan = (): void => {
     const fields = Array.from(
-      document.querySelectorAll("form,input,select,textarea,[contenteditable='true'],[contenteditable='']"),
+      document.querySelectorAll(
+        "form,input,select,textarea,[contenteditable='true'],[contenteditable='']",
+      ),
     ).filter((el): el is HTMLElement => el instanceof HTMLElement);
     countEl.textContent = `${fields.length} fields`;
-    listEl.textContent = fields.slice(0, 8).map((el) => el.tagName.toLowerCase()).join(", ");
+    listEl.textContent = fields
+      .slice(0, 8)
+      .map((el) => el.tagName.toLowerCase())
+      .join(", ");
   };
 
   const schedule = (): void => {

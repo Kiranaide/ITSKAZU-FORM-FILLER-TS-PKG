@@ -1,12 +1,17 @@
-import http from "node:http";
 import fs from "node:fs/promises";
+import type http from "node:http";
 import path from "node:path";
-import { WebSocketServer, WebSocket } from "ws";
 import type { ToolboxMessage } from "./messages.js";
 
-const clients = new Set<WebSocket>();
+type WsLike = {
+  on(event: "close" | "message", handler: (...args: unknown[]) => void): void;
+  send(data: string): void;
+};
 
-export function attachToolboxWs(server: http.Server, workspace: string): void {
+const clients = new Set<WsLike>();
+
+export async function attachToolboxWs(server: http.Server, workspace: string): Promise<void> {
+  const { WebSocketServer } = await import("ws");
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (req, socket, head) => {
     if (req.url !== "/__toolbox/ws") return;
@@ -14,7 +19,9 @@ export function attachToolboxWs(server: http.Server, workspace: string): void {
       clients.add(ws);
       ws.on("close", () => clients.delete(ws));
       ws.on("message", async (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
-        const msg = JSON.parse(Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw)) as ToolboxMessage;
+        const msg = JSON.parse(
+          Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw),
+        ) as ToolboxMessage;
         if (msg.type === "recording:save") {
           const dir = path.join(workspace, ".toolbox", "recordings");
           await fs.mkdir(dir, { recursive: true });

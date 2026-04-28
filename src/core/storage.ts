@@ -1,16 +1,19 @@
+import { migrateScript } from "./migrations";
+import type { FormScript } from "./schema";
 import type { RecordedScript } from "./types";
 
-const STORAGE_KEY = "itskazu-form-filler:scripts";
+const STORAGE_KEY = "kazu-fira:scripts";
 
-export function saveScript(script: RecordedScript): void {
+export function saveScript(script: FormScript | RecordedScript): void {
   const existing = loadAllScripts();
-  existing.push(script);
+  existing.push(migrateScript(script));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
 }
 
-export function loadAllScripts(): RecordedScript[] {
+export function loadAllScripts(): FormScript[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as unknown[];
+    return parsed.map((item) => migrateScript(item));
   } catch {
     return [];
   }
@@ -21,14 +24,15 @@ export function deleteScript(name: string): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(scripts));
 }
 
-export function exportScript(script: RecordedScript): void {
-  const blob = new Blob([JSON.stringify(script, null, 2)], {
+export function exportScript(script: FormScript | RecordedScript): void {
+  const normalized = migrateScript(script);
+  const blob = new Blob([JSON.stringify(normalized, null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement("a"), {
     href: url,
-    download: `${script.name.replace(/\s+/g, "-")}.json`,
+    download: `${normalized.name.replace(/\s+/g, "-")}.json`,
   });
   a.click();
   URL.revokeObjectURL(url);

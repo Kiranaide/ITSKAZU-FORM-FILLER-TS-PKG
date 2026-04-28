@@ -1,7 +1,7 @@
 # React Example
 
 ```tsx
-import { init } from "itskazu-form-filler";
+import { init } from "kazu-fira";
 
 init();
 ```

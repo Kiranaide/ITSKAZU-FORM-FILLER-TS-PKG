@@ -1,7 +1,7 @@
 import type { StoredSessionV2 } from "../core/types.js";
 
-export const SESSION_STORAGE_KEY_V2 = "itskazu-form-filler:sessions:v2";
-export const SESSION_STORAGE_KEY_LEGACY = "itskazu-form-filler:latest-recording";
+export const SESSION_STORAGE_KEY_V2 = "kazu-fira:sessions:v2";
+export const SESSION_STORAGE_KEY_LEGACY = "kazu-fira:latest-recording";
 export const DEFAULT_MAX_SESSIONS = 50;
 
 type LegacyStep = { type: string; selector: string; value?: string; checked?: boolean };
@@ -11,7 +11,11 @@ function normalizeSessions(input: unknown): StoredSessionV2[] {
   return input.filter((it): it is StoredSessionV2 => {
     if (!it || typeof it !== "object") return false;
     const candidate = it as Partial<StoredSessionV2>;
-    return candidate.schemaVersion === "2" && typeof candidate.id === "string" && Array.isArray(candidate.steps);
+    return (
+      candidate.schemaVersion === "2" &&
+      typeof candidate.id === "string" &&
+      Array.isArray(candidate.steps)
+    );
   });
 }
 
@@ -24,7 +28,10 @@ export function migrateLegacySteps(steps: LegacyStep[], now = Date.now()): Store
     url: typeof location === "undefined" ? "" : location.href,
     userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
     steps: steps.map((step, idx) => ({
-      type: step.type === "check" || step.type === "click" || step.type === "keyboard" ? step.type : "fill",
+      type:
+        step.type === "check" || step.type === "click" || step.type === "keyboard"
+          ? step.type
+          : "fill",
       selector: step.selector,
       selectors: [step.selector],
       displayName: step.selector,
@@ -52,12 +59,19 @@ export function readStoredSessions(storage: Storage = localStorage): StoredSessi
   }
 }
 
-export function writeStoredSessions(sessions: StoredSessionV2[], storage: Storage = localStorage, max = DEFAULT_MAX_SESSIONS): void {
+export function writeStoredSessions(
+  sessions: StoredSessionV2[],
+  storage: Storage = localStorage,
+  max = DEFAULT_MAX_SESSIONS,
+): void {
   const bounded = sessions.slice(0, max);
   storage.setItem(SESSION_STORAGE_KEY_V2, JSON.stringify(bounded));
 }
 
-export function saveStoredSession(session: StoredSessionV2, storage: Storage = localStorage): StoredSessionV2[] {
+export function saveStoredSession(
+  session: StoredSessionV2,
+  storage: Storage = localStorage,
+): StoredSessionV2[] {
   const sessions = readStoredSessions(storage);
   const next = [session, ...sessions.filter((it) => it.id !== session.id)].sort(
     (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
@@ -66,7 +80,10 @@ export function saveStoredSession(session: StoredSessionV2, storage: Storage = l
   return next;
 }
 
-export function deleteStoredSession(id: string, storage: Storage = localStorage): StoredSessionV2[] {
+export function deleteStoredSession(
+  id: string,
+  storage: Storage = localStorage,
+): StoredSessionV2[] {
   const next = readStoredSessions(storage).filter((it) => it.id !== id);
   writeStoredSessions(next, storage);
   return next;
