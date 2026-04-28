@@ -1,4 +1,4 @@
-# Kazu-Fira
+# Kazu-Fira (Filler)
 
 Framework-agnostic form recorder/replayer for browser apps, now organized as a Bun monorepo.
 

@@ -1,12 +1,29 @@
 {
-  "name": "kazu-fira-monorepo",
-  "private": true,
+  "name": "kazu-fira",
   "version": "1.4.1",
-  "packageManager": "bun@1.2.21",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "description": "Framework-agnostic form recorder and replayer. Zero runtime dependencies.",
+  "author": "ItsKazu",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "kazu-fira": "./dist/cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "dev:ext": "bun run --filter @itskazu/ext dev",
     "build:ext": "bun run --filter @itskazu/ext build:ext",
