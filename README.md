@@ -1,4 +1,4 @@
-# itskazu-form-filler
+# ItsKazu-Form-Filler
 
 Framework-agnostic form recorder/replayer for browser apps, with optional dev toolbar + proxy CLI.
 
