@@ -17,9 +17,9 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const args = { bump: "patch", noGh: false, noPush: false };
+  const args = { bump: "hotfix", noGh: false, noPush: false };
   for (const token of argv) {
-    if (["patch", "minor", "major", "prerelease"].includes(token)) {
+    if (["hotfix", "minor", "major"].includes(token)) {
       args.bump = token;
       continue;
     }
@@ -52,6 +52,11 @@ function ensureOnMaster() {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  const bumpMap = {
+    hotfix: "patch",
+    minor: "minor",
+    major: "major",
+  };
 
   ensureCleanTree();
   ensureOnMaster();
@@ -62,7 +67,7 @@ function main() {
   run("bun run build");
 
   const next = read(
-    `npm version ${args.bump} -m "chore(release): bump version to %s"`,
+    `npm version ${bumpMap[args.bump]} -m "chore(release): bump version to %s"`,
   );
 
   if (!args.noPush) {
