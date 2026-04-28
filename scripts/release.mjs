@@ -97,7 +97,7 @@ const ensureReleaseChangesExist = () => {
 };
 
 ensureCleanGitTree();
-ensureMainBranch();
+ensureMasterBranch();
 const releaseType = parseReleaseType(process.argv);
 createChangesetForReleaseType(releaseType);
 run("bun run type-check");
