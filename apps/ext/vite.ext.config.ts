@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   resolve: {
     alias: {
-      "kazu-fira": resolve(__dirname, "../../packages/core/src/index.ts"),
+      "kazu-fira": resolve(__dirname, "../../packages/core/dist"),
     },
   },
   build: {

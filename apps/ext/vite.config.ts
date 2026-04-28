@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "kazu-fira": resolve(__dirname, "../../packages/core/src/index.ts"),
+      "kazu-fira": resolve(__dirname, "../../packages/core/dist"),
     },
   },
   test: {

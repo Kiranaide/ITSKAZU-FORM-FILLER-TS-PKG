@@ -16,17 +16,31 @@ export interface SessionStep {
   optionText?: string | undefined;
   url?: string | undefined;
   ms?: number | undefined;
+  assertion?: string | undefined;
+  expected?: string | number | undefined;
   ts: number;
 }
 
 export interface StoredSessionV2 {
   id: string;
-  schemaVersion: "2";
   name: string;
-  createdAt: string;
-  url: string;
-  userAgent: string;
+  origin: string;
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt?: number;
   steps: SessionStep[];
-  lastRunAt?: string | undefined;
-  originScriptId?: string | undefined;
+  viewState?: {
+    scrollX: number;
+    scrollY: number;
+    viewport: { w: number; h: number };
+  } | undefined;
+  browser: {
+    url: string;
+    userAgent: string;
+  };
+  metadata?: {
+    title?: string;
+    description?: string;
+    duration?: number;
+  } | undefined;
 }

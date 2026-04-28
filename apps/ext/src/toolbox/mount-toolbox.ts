@@ -214,9 +214,9 @@ function writeCollapsed(collapsed: boolean): void {
   } catch {}
 }
 
-function formatRelativeDate(dateString?: string): string {
-  if (!dateString) return "Never";
-  const date = new Date(dateString);
+function formatRelativeDate(dateValue?: number | string): string {
+  if (!dateValue) return "Never";
+  const date = typeof dateValue === "number" ? new Date(dateValue) : new Date(dateValue);
   if (Number.isNaN(date.getTime())) return "Never";
   const diffMs = Date.now() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -582,7 +582,7 @@ export function mountToolbox(storage: Storage = localStorage): void {
         state.currentStepIndex = -1;
         state.lastRunLabel = "Just now";
         setStatus("idle");
-        updateStoredSession(session.id, { lastRunAt: new Date().toISOString() }, storage);
+        updateStoredSession(session.id, (s) => ({ ...s, lastRunAt: Date.now() }), storage);
         renderSessionsGrid();
         writeLog(`run complete (${session.steps.length} steps)`);
       },
@@ -662,11 +662,14 @@ export function mountToolbox(storage: Storage = localStorage): void {
   elements.newSession.addEventListener("click", () => {
     const session: StoredSessionV2 = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      schemaVersion: "2",
       name: "New session",
-      createdAt: new Date().toISOString(),
-      url: location.href,
-      userAgent: navigator.userAgent,
+      origin: location.origin,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      browser: {
+        url: location.href,
+        userAgent: navigator.userAgent,
+      },
       steps: [],
     };
     saveStoredSession(session, storage);

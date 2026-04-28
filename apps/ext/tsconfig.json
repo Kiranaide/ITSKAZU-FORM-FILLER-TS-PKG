@@ -5,7 +5,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "kazu-fira": ["../../packages/core/src/index.ts"]
+      "kazu-fira": ["../../packages/core/dist/index.d.ts"]
     },
     "types": ["vite/client", "node", "chrome"],
     "noEmit": true
@@ -14,7 +14,6 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "vite.config.ts",
-    "vite.ext.config.ts",
-    "../../packages/core/src/**/*.ts"
+    "vite.ext.config.ts"
   ]
 }

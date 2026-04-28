@@ -2,8 +2,6 @@ import {
   type FormScript,
   type FormScriptStep,
   normalizeScriptInput,
-  type RecordedAction,
-  type RecordedScript,
 } from "kazu-fira";
 import type { SessionStep, StoredSessionV2 } from "../session-types.js";
 
@@ -27,12 +25,13 @@ function normalizeText(value: string | null | undefined): string {
 }
 
 function selectorToCss(
-  selector: Exclude<FormScriptStep, { type: "wait" | "navigate" }>["selector"],
+  selector: Exclude<FormScriptStep, { type: "wait" | "navigate" | "assert" }>["selector"],
 ): string {
+  if (!selector) return "";
   if (selector.kind === "id") return `#${CSS.escape(selector.value)}`;
-  if (selector.kind === "name") return `[name="${selector.value}"]`;
-  if (selector.kind === "aria") return `[aria-label="${selector.value}"]`;
-  if (selector.kind === "data") return `[${selector.attr}="${selector.value}"]`;
+  if (selector.kind === "name") return `[name="${CSS.escape(selector.value)}"]`;
+  if (selector.kind === "aria") return `[aria-label="${CSS.escape(selector.value)}"]`;
+  if (selector.kind === "data") return `[data-${CSS.escape(selector.attr)}="${CSS.escape(selector.value)}"]`;
   return selector.value;
 }
 
@@ -63,7 +62,20 @@ function scriptStepToSessionStep(step: FormScriptStep, fallbackTs: number): Sess
     };
   }
 
-  const selector = selectorToCss(step.selector);
+  if (step.type === "assert") {
+    return {
+      type: step.type,
+      scriptStep: step,
+      selector: step.selector ? selectorToCss(step.selector) : "",
+      selectors: step.selector ? [selectorToCss(step.selector)] : [],
+      displayName: `Assert ${step.assertion}`,
+      tagName: "assertion",
+      ts: step.timestamp,
+    };
+  }
+
+  const sel = "selector" in step ? step.selector : undefined;
+  const selector = sel ? selectorToCss(sel) : "";
   return {
     type: step.type,
     scriptStep: step,
@@ -77,221 +89,95 @@ function scriptStepToSessionStep(step: FormScriptStep, fallbackTs: number): Sess
   };
 }
 
-function recordedActionMeta(action: RecordedAction) {
-  const selectors = action.selector.strategies.map((strategy) => strategy.value);
-  const primarySelector = selectors[0] ?? "";
-  const fieldType = normalizeText(action.selector.fieldType);
-  const displayName =
-    normalizeText(action.metadata?.fieldLabel) ||
-    normalizeText(action.selector.label) ||
-    primarySelector ||
-    fieldType ||
-    action.type;
-
-  return {
-    selectors,
-    primarySelector,
-    displayName,
-    tagName: fieldType || "field",
-    inputType: fieldType.includes("[") ? fieldType.split("[")[1]?.replace("]", "") : undefined,
-  };
-}
-
-function isStringArray(input: unknown): input is string[] {
-  return Array.isArray(input) && input.every((item) => typeof item === "string");
-}
-
-function normalizeStoredStep(input: unknown, now: number): SessionStep | null {
-  if (!input || typeof input !== "object") return null;
-  const candidate = input as Partial<SessionStep>;
-  if (!candidate.scriptStep || typeof candidate.scriptStep !== "object") return null;
-
-  const fallback = scriptStepToSessionStep(candidate.scriptStep, now);
-  return {
-    ...fallback,
-    selector: candidate.selector ?? fallback.selector,
-    selectors: isStringArray(candidate.selectors) ? candidate.selectors : fallback.selectors,
-    displayName:
-      typeof candidate.displayName === "string" && candidate.displayName
-        ? candidate.displayName
-        : fallback.displayName,
-    tagName:
-      typeof candidate.tagName === "string" && candidate.tagName
-        ? candidate.tagName
-        : fallback.tagName,
-    inputType:
-      typeof candidate.inputType === "string" && candidate.inputType
-        ? candidate.inputType
-        : fallback.inputType,
-    value: typeof candidate.value === "string" ? candidate.value : fallback.value,
-    checked: typeof candidate.checked === "boolean" ? candidate.checked : fallback.checked,
-    masked: typeof candidate.masked === "boolean" ? candidate.masked : fallback.masked,
-    optionText:
-      typeof candidate.optionText === "string" ? candidate.optionText : fallback.optionText,
-    url: typeof candidate.url === "string" ? candidate.url : fallback.url,
-    ms: typeof candidate.ms === "number" ? candidate.ms : fallback.ms,
-    ts: typeof candidate.ts === "number" ? candidate.ts : fallback.ts,
-  };
-}
-
-function normalizeSessions(input: unknown): StoredSessionV2[] {
-  if (!Array.isArray(input)) return [];
-
-  return input.flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
-    const candidate = item as Partial<StoredSessionV2>;
-    if (candidate.schemaVersion !== "2" || typeof candidate.id !== "string") return [];
-    const now = Date.now() + index;
-    const context = getBrowserContext();
-    const steps = Array.isArray(candidate.steps)
-      ? candidate.steps
-          .map((step, stepIndex) => normalizeStoredStep(step, now + stepIndex))
-          .filter((step): step is SessionStep => step !== null)
-      : [];
-
-    return [
-      {
-        id: candidate.id,
-        schemaVersion: "2",
-        name: typeof candidate.name === "string" ? candidate.name : "Recovered session",
-        createdAt:
-          typeof candidate.createdAt === "string"
-            ? candidate.createdAt
-            : new Date(now).toISOString(),
-        url: typeof candidate.url === "string" ? candidate.url : context.url,
-        userAgent:
-          typeof candidate.userAgent === "string" ? candidate.userAgent : context.userAgent,
-        steps,
-        lastRunAt: typeof candidate.lastRunAt === "string" ? candidate.lastRunAt : undefined,
-        originScriptId:
-          typeof candidate.originScriptId === "string" ? candidate.originScriptId : undefined,
-      },
-    ];
-  });
-}
-
-function sortSessions(sessions: StoredSessionV2[]): StoredSessionV2[] {
-  return [...sessions].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-}
-
-function dedupeSessions(sessions: StoredSessionV2[]): StoredSessionV2[] {
-  const byId = new Map<string, StoredSessionV2>();
-  for (const session of sortSessions(sessions)) {
-    if (!byId.has(session.id)) byId.set(session.id, session);
-  }
-  return [...byId.values()];
-}
-
-export function formScriptToStoredSession(
-  script: FormScript,
-  options: Partial<Pick<StoredSessionV2, "name" | "createdAt" | "url" | "userAgent" | "id">> = {},
-): StoredSessionV2 {
-  const context = getBrowserContext();
-  return {
-    id: options.id ?? script.id,
-    schemaVersion: "2",
-    name: options.name ?? script.name,
-    createdAt: options.createdAt ?? new Date(script.createdAt).toISOString(),
-    url: options.url ?? script.origin ?? context.url,
-    userAgent: options.userAgent ?? context.userAgent,
-    originScriptId: script.id,
-    steps: script.steps.map((step, index) =>
-      scriptStepToSessionStep(step, step.type === "wait" ? index : 0),
-    ),
-  };
+function stepToDisplayName(step: FormScriptStep): string {
+  if (step.type === "wait") return `Wait ${step.ms}ms`;
+  if (step.type === "navigate") return `Navigate to ${step.url}`;
+  if (step.type === "assert") return `Assert ${step.assertion}`;
+  if (step.type === "input") return step.masked ? "(masked)" : step.value;
+  if (step.type === "select") return step.value;
+  if (step.type === "keyboard") return step.key;
+  return "";
 }
 
 export function recordedScriptToStoredSession(
-  script: RecordedScript,
-  options: Partial<Pick<StoredSessionV2, "name">> = {},
+  formScript: FormScript,
 ): StoredSessionV2 {
-  const normalized = normalizeScriptInput(script);
-  const session = formScriptToStoredSession(normalized, { name: options.name ?? script.name });
-  const actions = script.actions ?? [];
-
-  session.steps = normalized.steps.map((step, index) => {
-    const fallback = scriptStepToSessionStep(step, step.type === "wait" ? index : 0);
-    const action = actions[index];
-    if (!action) return fallback;
-
-    const meta = recordedActionMeta(action);
-    return {
-      ...fallback,
-      selector: meta.primarySelector || fallback.selector,
-      selectors: meta.selectors.length > 0 ? meta.selectors : fallback.selectors,
-      displayName: meta.displayName,
-      tagName: meta.tagName,
-      inputType: meta.inputType ?? fallback.inputType,
-    };
-  });
-
-  return session;
+  return {
+    id: formScript.id,
+    name: formScript.name,
+    origin: formScript.origin,
+    createdAt: formScript.createdAt,
+    updatedAt: formScript.updatedAt,
+    steps: formScript.steps.map((step, i) => scriptStepToSessionStep(step, i * 100)),
+    viewState: {
+      scrollX: 0,
+      scrollY: 0,
+      viewport: { w: 1920, h: 1080 },
+    },
+    browser: getBrowserContext(),
+    metadata: {
+      title: formScript.name,
+      description: `${formScript.steps.length} steps`,
+      duration: formScript.steps.reduce((acc, step) => acc + (step.type === "wait" ? step.ms : 0), 0),
+    },
+  };
 }
 
 export function storedSessionToFormScript(session: StoredSessionV2): FormScript {
-  const createdAt = +new Date(session.createdAt) || Date.now();
   return {
     version: 2,
-    id: session.originScriptId ?? session.id,
+    id: session.id,
     name: session.name,
-    createdAt,
-    updatedAt: Date.now(),
-    origin: session.url,
-    steps: session.steps.map((step) => step.scriptStep),
+    origin: session.origin,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    steps: session.steps.map((s) => s.scriptStep).filter(Boolean),
   };
 }
 
 export function readStoredSessions(storage: Storage = localStorage): StoredSessionV2[] {
   try {
-    const existing = normalizeSessions(JSON.parse(storage.getItem(SESSION_STORAGE_KEY_V2) ?? "[]"));
-    return sortSessions(dedupeSessions(existing));
+    const raw = storage.getItem(SESSION_STORAGE_KEY_V2);
+    if (!raw) return [];
+    return JSON.parse(raw) as StoredSessionV2[];
   } catch {
     return [];
   }
 }
 
-export function writeStoredSessions(
-  sessions: StoredSessionV2[],
-  storage: Storage = localStorage,
-  max = DEFAULT_MAX_SESSIONS,
-): void {
-  const bounded = sortSessions(sessions).slice(0, max);
-  storage.setItem(SESSION_STORAGE_KEY_V2, JSON.stringify(bounded));
+export function writeStoredSessions(sessions: StoredSessionV2[], storage: Storage = localStorage): void {
+  const trimmed = sessions.slice(0, DEFAULT_MAX_SESSIONS);
+  storage.setItem(SESSION_STORAGE_KEY_V2, JSON.stringify(trimmed));
 }
 
-export function saveStoredSession(
-  session: StoredSessionV2,
-  storage: Storage = localStorage,
-): StoredSessionV2[] {
+export function saveStoredSession(session: StoredSessionV2, storage: Storage = localStorage): void {
   const sessions = readStoredSessions(storage);
-  const next = [session, ...sessions.filter((it) => it.id !== session.id)];
-  writeStoredSessions(next, storage);
-  return sortSessions(next);
+  const existing = sessions.findIndex((s) => s.id === session.id);
+  if (existing >= 0) {
+    sessions[existing] = session;
+  } else {
+    sessions.unshift(session);
+  }
+  writeStoredSessions(sessions, storage);
+}
+
+export function deleteStoredSession(id: string, storage: Storage = localStorage): void {
+  const sessions = readStoredSessions(storage).filter((s) => s.id !== id);
+  writeStoredSessions(sessions, storage);
 }
 
 export function updateStoredSession(
   id: string,
-  patch: Partial<Omit<StoredSessionV2, "id" | "schemaVersion">>,
+  update: ((session: StoredSessionV2) => StoredSessionV2) | Partial<StoredSessionV2>,
   storage: Storage = localStorage,
-): StoredSessionV2[] {
-  const next = readStoredSessions(storage).map((session): StoredSessionV2 => {
-    if (session.id !== id) return session;
-    return {
-      ...session,
-      ...patch,
-      id,
-      schemaVersion: "2" as const,
-    };
-  });
-  writeStoredSessions(next, storage);
-  return sortSessions(next);
-}
-
-export function deleteStoredSession(
-  id: string,
-  storage: Storage = localStorage,
-): StoredSessionV2[] {
-  const next = readStoredSessions(storage).filter((it) => it.id !== id);
-  writeStoredSessions(next, storage);
-  return next;
+): void {
+  const sessions = readStoredSessions(storage);
+  const index = sessions.findIndex((s) => s.id === id);
+  if (index >= 0 && sessions[index]) {
+    const updated = typeof update === "function"
+      ? update(sessions[index])
+      : { ...sessions[index], ...update };
+    sessions[index] = updated;
+    writeStoredSessions(sessions, storage);
+  }
 }

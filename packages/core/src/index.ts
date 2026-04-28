@@ -1,4 +1,5 @@
 import type { KazuFiraHooks, KazuFiraPlugin } from "./core/types";
+import type { RecordedAction, RecordedScript } from "./core/types";
 
 export { createEmptyScript, migrateScript } from "./core/migrations";
 export type { PIIDetectionField, PIIMaskingConfig } from "./core/pii-detector";
@@ -21,6 +22,8 @@ export {
 export { deserializeScript, serializeScript } from "./core/serializer";
 export type { ExportOptions } from "./exporters";
 export { exportToPlaywright, exportToPuppeteer } from "./exporters";
+
+export type { RecorderOptions, ReplayOptions, KazuFiraHooks, KazuFiraPlugin, RecordedAction, RecordedScript } from "./core/types";
 
 export function applyPlugins(
   plugins: readonly KazuFiraPlugin[] = [],

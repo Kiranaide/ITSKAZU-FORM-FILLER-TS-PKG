@@ -1,4 +1,4 @@
-import { Recorder, Replayer } from "kazu-fira";
+import { Recorder, Replayer, type FormScript } from "kazu-fira";
 import { watchOpenShadowRoots } from "../adapters/shadow-dom.js";
 import {
   recordedScriptToStoredSession,
@@ -45,9 +45,20 @@ export function createToolboxCoreFacade() {
         return null;
       }
 
-      const script = recorder.stop();
+      const recorded = recorder.stop();
       recorder = null;
-      return recordedScriptToStoredSession(script, name ? { name } : {});
+
+      const script: FormScript = {
+        version: 2,
+        id: recorded.id ?? `script-${Date.now()}`,
+        name: name ?? recorded.name ?? "Recording",
+        createdAt: recorded.createdAt,
+        updatedAt: recorded.updatedAt ?? Date.now(),
+        origin: recorded.origin ?? location.origin,
+        steps: recorded.steps ?? [],
+      };
+
+      return recordedScriptToStoredSession(script);
     },
 
     cancelRecording() {
@@ -64,7 +75,7 @@ export function createToolboxCoreFacade() {
 
     async replaySession(session: StoredSessionV2, callbacks: ReplayCallbacks = {}) {
       const script = storedSessionToFormScript(session);
-      const expectedOrigin = parseOrigin(session.url);
+      const expectedOrigin = session.browser?.url ? parseOrigin(session.browser.url) : null;
       const replayer = new Replayer({
         script,
         ...(expectedOrigin ? { expectedOrigin } : {}),

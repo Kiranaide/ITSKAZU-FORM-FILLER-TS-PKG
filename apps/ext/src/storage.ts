@@ -1,9 +1,9 @@
-import { type FormScript, migrateScript, type RecordedScript } from "kazu-fira";
+import { type FormScript, migrateScript } from "kazu-fira";
 
 const STORAGE_KEY = "kazu-fira:scripts";
 
 export function saveScript(
-  script: FormScript | RecordedScript,
+  script: FormScript,
   storage: Storage = localStorage,
 ): void {
   const existing = loadAllScripts(storage);
@@ -25,7 +25,7 @@ export function deleteScript(name: string, storage: Storage = localStorage): voi
   storage.setItem(STORAGE_KEY, JSON.stringify(scripts));
 }
 
-export function exportScript(script: FormScript | RecordedScript): void {
+export function exportScript(script: FormScript): void {
   const normalized = migrateScript(script);
   const blob = new Blob([JSON.stringify(normalized, null, 2)], {
     type: "application/json",
