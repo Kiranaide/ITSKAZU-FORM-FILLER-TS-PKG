@@ -17,7 +17,7 @@ describe("recorder", () => {
     form.append(input, checkbox);
     document.body.append(form);
 
-    const recorder = new Recorder({ root: document.body });
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
     recorder.start();
 
     input.value = "user@example.com";

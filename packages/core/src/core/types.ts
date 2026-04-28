@@ -13,8 +13,8 @@ export type ActionType =
 
 export interface ElementSelector {
   strategies: SelectorStrategy[];
-  label?: string | undefined;
-  fieldType?: string | undefined;
+  label?: string;
+  fieldType?: string;
 }
 
 export interface SelectorStrategy {
@@ -34,49 +34,22 @@ export interface RecordedAction {
     | {
         url: string;
         viewport: { w: number; h: number };
-        formId?: string | undefined;
-        fieldLabel?: string | undefined;
+        formId?: string;
+        fieldLabel?: string;
       }
     | undefined;
 }
 
 export interface RecordedScript {
-  version: "1" | 2;
-  name: string;
-  url?: string | undefined;
-  createdAt: string | number;
-  userAgent?: string | undefined;
-  actions?: RecordedAction[] | undefined;
-  id?: string | undefined;
-  updatedAt?: number | undefined;
-  origin?: string | undefined;
-  steps?: FormScriptStep[] | undefined;
-}
-
-export interface LegacyRecordedScript {
-  version: "1";
-  name: string;
-  createdAt: string | number;
-  url?: string | undefined;
-  userAgent?: string | undefined;
-  actions?: RecordedAction[] | undefined;
-  id?: string | undefined;
-}
-
-export interface RecordedScriptV2 {
   version: 2;
-  id?: string | undefined;
   name: string;
+  id?: string;
   createdAt: number;
-  updatedAt?: number | undefined;
-  origin?: string | undefined;
-  steps?: FormScriptStep[] | undefined;
-  actions?: RecordedAction[] | undefined;
-  url?: string | undefined;
-  userAgent?: string | undefined;
+  updatedAt?: number;
+  origin?: string;
+  steps?: FormScriptStep[];
+  actions?: RecordedAction[];
 }
-
-export type VersionedRecordedScript = LegacyRecordedScript | RecordedScriptV2;
 
 export interface RecorderOptions {
   root?: HTMLElement | ShadowRoot;
@@ -90,7 +63,7 @@ export interface RecorderOptions {
 }
 
 export interface ReplayOptions {
-  script: FormScript | RecordedScript | VersionedRecordedScript;
+  script: FormScript;
   expectedOrigin?: string;
   allowCrossOriginReplay?: boolean;
   speedMultiplier?: number;

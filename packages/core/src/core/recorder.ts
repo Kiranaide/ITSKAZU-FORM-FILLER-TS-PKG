@@ -1,5 +1,6 @@
 import { getEventTargetElement, isFormField, matchesAnySelector } from "../utils/dom";
 import { nanoid } from "../utils/nanoid";
+import { createDefaultPIIConfig, PIIDetector } from "./pii-detector";
 import { FORMSCRIPT_VERSION, type FormScript, type FormScriptStep } from "./schema";
 import { extractSelectors, toFormSelectorStrategy } from "./selector";
 import type { RecordedAction, RecordedScript, RecorderOptions } from "./types";
@@ -8,6 +9,7 @@ const DEFAULT_MASK_SELECTORS = [
   '[type="password"]',
   '[autocomplete*="cc-number"]',
   '[autocomplete*="cc-csc"]',
+  '[autocomplete*="cc-exp"]',
 ];
 
 function mapRecordedTypeToStep(
@@ -69,6 +71,11 @@ function createRecordedAction(
   };
 }
 
+export interface RecorderState {
+  isRecording: boolean;
+  stepCount: number;
+}
+
 export class Recorder {
   private steps: FormScriptStep[] = [];
   private actions: RecordedAction[] = [];
@@ -77,9 +84,20 @@ export class Recorder {
   private options: RecorderOptions;
   private controllers: AbortController[] = [];
   private stopWatchingShadowRoots: (() => void) | undefined;
+  private piiDetector: PIIDetector;
+  private state: RecorderState = { isRecording: false, stepCount: 0 };
 
   constructor(options: RecorderOptions = {}) {
     this.options = options;
+    this.piiDetector = new PIIDetector(
+      options.maskSensitiveInputs === false
+        ? { enabled: false, selectors: [], fields: [] }
+        : { selectors: options.mask ?? DEFAULT_MASK_SELECTORS },
+    );
+  }
+
+  getState(): RecorderState {
+    return { ...this.state, stepCount: this.steps.length };
   }
 
   start(): void {
@@ -87,9 +105,11 @@ export class Recorder {
     this.actions = [];
     this.startTime = performance.now();
     this.lastActionTime = this.startTime;
+    this.state = { isRecording: true, stepCount: 0 };
 
     const root = this.options.root ?? document.body;
     this.attachListeners(root);
+    this.attachNavigationListeners();
     this.options.hooks?.onRecordStart?.();
 
     this.stopWatchingShadowRoots = this.options.observeShadowRoots?.((shadowRoot) => {
@@ -104,6 +124,7 @@ export class Recorder {
     this.controllers = [];
     this.stopWatchingShadowRoots?.();
     this.stopWatchingShadowRoots = undefined;
+    this.state = { isRecording: false, stepCount: this.steps.length };
 
     const now = Date.now();
     const script: FormScript = {
@@ -161,6 +182,43 @@ export class Recorder {
       signal,
       capture: true,
     });
+  }
+
+  private attachNavigationListeners(): void {
+    const controller = new AbortController();
+    this.controllers.push(controller);
+    const signal = controller.signal;
+
+    window.addEventListener("popstate", (event) => this.onPopState(event as PopStateEvent), {
+      signal,
+    });
+
+    window.addEventListener("hashchange", (event) => this.onHashChange(), {
+      signal,
+    });
+  }
+
+  private onPopState(event: PopStateEvent): void {
+    if (!this.state.isRecording) return;
+    this.captureNavigation(location.href, "popstate");
+  }
+
+  private onHashChange(): void {
+    if (!this.state.isRecording) return;
+    this.captureNavigation(location.href, "popstate");
+  }
+
+  private captureNavigation(
+    url: string,
+    triggeredBy: "link" | "form" | "script" | "popstate" = "link",
+  ): void {
+    const step: FormScriptStep = {
+      type: "navigate",
+      url,
+      triggeredBy,
+      timestamp: Math.round(performance.now() - this.startTime),
+    };
+    this.steps.push(step);
   }
 
   private capture(
@@ -270,10 +328,13 @@ export class Recorder {
   }
 
   private isMasked(el: Element): boolean {
-    const selectors = [
-      ...(this.options.maskSensitiveInputs === false ? [] : DEFAULT_MASK_SELECTORS),
-      ...(this.options.mask ?? []),
-    ];
+    if (this.options.maskSensitiveInputs === false) return false;
+
+    if (this.piiDetector.shouldMask(el)) {
+      return true;
+    }
+
+    const selectors = this.options.mask ?? DEFAULT_MASK_SELECTORS;
     return matchesAnySelector(el, selectors);
   }
 
@@ -334,11 +395,19 @@ export class Recorder {
     if (!el) {
       return;
     }
-    const clickTarget = this.getClickableTarget(el);
-    if (!clickTarget || this.shouldIgnore(clickTarget)) {
+
+    const target = this.getClickableTarget(el);
+    if (!target || this.shouldIgnore(target)) {
       return;
     }
-    this.capture("click", clickTarget);
+
+    if (target instanceof HTMLAnchorElement && target.href) {
+      if (target.target !== "_blank" && !target.href.startsWith("#")) {
+        this.captureNavigation(target.href, "link");
+      }
+    }
+
+    this.capture("click", target);
   }
 
   private onKeyDown(event: KeyboardEvent): void {
@@ -362,6 +431,10 @@ export class Recorder {
   private onSubmit(event: SubmitEvent): void {
     const el = getEventTargetElement(event);
     if (el instanceof HTMLFormElement) {
+      const action = el.action || location.href;
+      if (action && action !== location.origin + "/") {
+        this.captureNavigation(action, "form");
+      }
       this.capture("submit", el);
     }
   }

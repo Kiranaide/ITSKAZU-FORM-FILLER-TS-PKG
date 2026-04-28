@@ -1,24 +1,26 @@
 import type { KazuFiraHooks, KazuFiraPlugin } from "./core/types";
 
-export { migrateScript } from "./core/migrations";
-export { Recorder } from "./core/recorder";
-export { Replayer } from "./core/replayer";
-export type { FormScript, FormScriptStep, SelectorStrategy } from "./core/schema";
-export { normalizeScriptInput } from "./core/script-normalizer";
+export { createEmptyScript, migrateScript } from "./core/migrations";
+export type { PIIDetectionField, PIIMaskingConfig } from "./core/pii-detector";
+export { createDefaultPIIConfig, PIIDetector } from "./core/pii-detector";
+export { Recorder, type RecorderState } from "./core/recorder";
+export type { ReplayerState } from "./core/replayer";
+export { normalizeScriptInput, Replayer } from "./core/replayer";
+export type {
+  FormScript,
+  FormScriptStep,
+  ReplayPerformanceResult,
+  SelectorStrategy,
+  StepTiming,
+} from "./core/schema";
 export {
   extractSelectors,
   resolveByFormSelectorStrategy,
   toFormSelectorStrategy,
 } from "./core/selector";
 export { deserializeScript, serializeScript } from "./core/serializer";
-export type {
-  KazuFiraHooks,
-  KazuFiraPlugin,
-  RecordedAction,
-  RecordedScript,
-  RecorderOptions,
-  ReplayOptions,
-} from "./core/types";
+export type { ExportOptions } from "./exporters";
+export { exportToPlaywright, exportToPuppeteer } from "./exporters";
 
 export function applyPlugins(
   plugins: readonly KazuFiraPlugin[] = [],

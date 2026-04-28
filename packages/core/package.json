@@ -1,6 +1,6 @@
 {
   "name": "kazu-fira",
-  "version": "1.4.1",
+  "version": "2.0.0",
   "description": "Framework-agnostic form recorder and replayer.",
   "author": "ItsKazu",
   "license": "MIT",

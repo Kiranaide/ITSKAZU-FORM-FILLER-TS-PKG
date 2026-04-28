@@ -7,6 +7,29 @@ export type SelectorStrategy =
   | { kind: "aria"; value: string }
   | { kind: "css"; value: string };
 
+export type AssertionType =
+  | "visible"
+  | "hidden"
+  | "enabled"
+  | "disabled"
+  | "checked"
+  | "unchecked"
+  | "text"
+  | "value"
+  | "count"
+  | "contains";
+
+export type AssertionOperator = "equals" | "contains" | "matches" | "gt" | "gte" | "lt" | "lte";
+
+export type AssertStep = {
+  type: "assert";
+  selector?: SelectorStrategy;
+  assertion: AssertionType;
+  expected?: string | number;
+  operator?: AssertionOperator;
+  timestamp: number;
+};
+
 export type FormScriptStep =
   | {
       type: "input";
@@ -36,11 +59,32 @@ export type FormScriptStep =
       type: "navigate";
       url: string;
       timestamp: number;
+      triggeredBy?: "link" | "form" | "script" | "popstate";
     }
   | {
       type: "wait";
       ms: number;
-    };
+    }
+  | AssertStep;
+
+export interface StepTiming {
+  stepIndex: number;
+  type: FormScriptStep["type"];
+  selector?: SelectorStrategy;
+  startTime: number;
+  endTime: number;
+  durationMs: number;
+}
+
+export interface ReplayPerformanceResult {
+  scriptId: string;
+  scriptName: string;
+  totalDurationMs: number;
+  stepTimings: StepTiming[];
+  startTime: number;
+  endTime: number;
+  stepsPerSecond: number;
+}
 
 export interface FormScript {
   version: typeof FORMSCRIPT_VERSION;

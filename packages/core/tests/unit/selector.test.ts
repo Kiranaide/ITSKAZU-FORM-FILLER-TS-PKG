@@ -133,8 +133,12 @@ describe("selector", () => {
     wrapper.append(inputA, inputB);
     document.body.append(wrapper);
 
-    const selectorA = extractSelectors(inputA).strategies.find((item) => item.type === "css")?.value;
-    const selectorB = extractSelectors(inputB).strategies.find((item) => item.type === "css")?.value;
+    const selectorA = extractSelectors(inputA).strategies.find(
+      (item) => item.type === "css",
+    )?.value;
+    const selectorB = extractSelectors(inputB).strategies.find(
+      (item) => item.type === "css",
+    )?.value;
     expect(selectorA).toBeTruthy();
     expect(selectorB).toBeTruthy();
     expect(selectorA).not.toEqual(selectorB);
@@ -153,9 +157,9 @@ describe("selector", () => {
     const selector = extractSelectors(input);
     const values = selector.strategies.map((item) => item.value);
     expect(values.some((value) => value.startsWith('[placeholder="'))).toBe(true);
-    expect(values.some((value) => value.startsWith('[aria-describedby="approved-limit-help"'))).toBe(
-      true,
-    );
+    expect(
+      values.some((value) => value.startsWith('[aria-describedby="approved-limit-help"')),
+    ).toBe(true);
     expect(resolveElement(selector)).toBe(input);
   });
 

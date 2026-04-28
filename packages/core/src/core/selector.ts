@@ -42,7 +42,8 @@ export function extractSelectors(el: Element): ElementSelector {
     "aria-describedby": 0.72,
   };
   for (const attr of Object.keys(attrConfidence)) {
-    const val = attr === "readonly" ? (el.hasAttribute("readonly") ? "true" : "") : el.getAttribute(attr);
+    const val =
+      attr === "readonly" ? (el.hasAttribute("readonly") ? "true" : "") : el.getAttribute(attr);
     if (!val) {
       continue;
     }
@@ -51,7 +52,9 @@ export function extractSelectors(el: Element): ElementSelector {
     const selectorValue = attr === "readonly" ? `[readonly]` : `[${attr}="${escaped}"]`;
     const unique = isUniqueSelector(selectorValue, el);
     const confidenceBoost =
-      attr === "aria-describedby" && /^react-select-\d+-placeholder$/.test(attributeValue) ? -0.18 : 0;
+      attr === "aria-describedby" && /^react-select-\d+-placeholder$/.test(attributeValue)
+        ? -0.18
+        : 0;
     const uniquenessPenalty = unique ? 0 : -0.35;
     if (attr === "readonly" && !unique) {
       continue;
@@ -59,7 +62,10 @@ export function extractSelectors(el: Element): ElementSelector {
     strategies.push({
       type: attr === "readonly" ? "css" : "data-testid",
       value: selectorValue,
-      confidence: Math.max(0.4, (attrConfidence[attr] ?? 0.8) + confidenceBoost + uniquenessPenalty),
+      confidence: Math.max(
+        0.4,
+        (attrConfidence[attr] ?? 0.8) + confidenceBoost + uniquenessPenalty,
+      ),
     });
   }
 
@@ -80,11 +86,16 @@ export function extractSelectors(el: Element): ElementSelector {
 
   const label = getAssociatedLabel(el);
 
-  return {
+  const result: ElementSelector = {
     strategies: strategies.sort((a, b) => b.confidence - a.confidence),
-    label,
     fieldType: (el as HTMLInputElement).type ?? el.tagName.toLowerCase(),
   };
+
+  if (label) {
+    result.label = label;
+  }
+
+  return result;
 }
 
 export function resolveElement(
