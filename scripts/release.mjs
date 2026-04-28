@@ -51,6 +51,16 @@ function ensureOnMaster() {
   }
 }
 
+function printBanner(version) {
+  const pad = " ".repeat(38 - version.length);
+  console.log(`
+╔═══════════════════════════════════════════╗
+║     kazu-fira v${version}${pad}║
+║     Universal Form Recorder & Replayer    ║
+╚═══════════════════════════════════════════╝
+`);
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const bumpMap = {
@@ -70,6 +80,8 @@ function main() {
   const next = read(
     `npm version ${bumpMap[args.bump]} -m "chore(release): bump version to %s"`
   );
+
+  printBanner(next);
 
   if (!args.noPush) {
     run("git push --follow-tags");

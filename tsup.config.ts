@@ -21,7 +21,7 @@ export default defineConfig([
     format: ["esm"],
     platform: "node",
     target: "es2022",
-    external: ["hono"],
+    external: ["hono", "ws"],
     outDir: "dist",
     outExtension() {
       return { js: ".mjs" };
