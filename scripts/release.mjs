@@ -43,7 +43,7 @@ function ensureCleanTree() {
   }
 }
 
-function ensureOnmaster() {
+function ensureOnMaster() {
   const branch = read("git rev-parse --abbrev-ref HEAD");
   if (branch !== "master") {
     fail(`current branch is '${branch}'. Switch to 'master' first.`);
@@ -54,7 +54,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
 
   ensureCleanTree();
-  ensureOnMain();
+  ensureOnMaster();
 
   run("bun install --frozen-lockfile");
   run("bun run type-check");
