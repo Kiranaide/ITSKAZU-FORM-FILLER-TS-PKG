@@ -1,5 +1,5 @@
 {
-  "name": "kazu-fira",
+  "name": "kazu-fira-monorepo",
   "version": "1.4.1",
   "description": "Framework-agnostic form recorder and replayer. Zero runtime dependencies.",
   "author": "ItsKazu",
