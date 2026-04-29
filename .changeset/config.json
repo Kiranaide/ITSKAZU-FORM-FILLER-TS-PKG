@@ -1,10 +1,10 @@
 {
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "linked": [["kazu-fira", "@itskazu/ext"]],
+  "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [],
+  "ignore": ["@itskazu/ext"],
   "provenance": true
 }
