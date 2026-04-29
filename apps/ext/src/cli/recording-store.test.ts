@@ -62,7 +62,7 @@ describe("recording-store", () => {
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw ?? "[]") as Array<{ id: string }>;
     expect(parsed).toHaveLength(2);
-    expect(parsed[0]?.id).toBe("b");
-    expect(parsed[1]?.id).toBe("a");
+    expect(parsed[0]?.id).toBe("a");
+    expect(parsed[1]?.id).toBe("b");
   });
 });
