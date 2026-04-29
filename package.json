@@ -4,7 +4,7 @@
     "apps/*"
   ],
   "name": "kazu-fira-monorepo",
-  "version": "3.0.1",
+  "version": "4.0.0",
   "description": "Framework-agnostic form recorder and replayer. Zero runtime dependencies.",
   "author": "ItsKazu",
   "license": "MIT",
