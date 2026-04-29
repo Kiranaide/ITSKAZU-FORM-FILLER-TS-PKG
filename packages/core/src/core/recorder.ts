@@ -115,14 +115,6 @@ export class Recorder {
   private activeDatepickerInput: HTMLInputElement | null = null;
   private state: RecorderState = { isRecording: false, stepCount: 0 };
 
-  private debugLog(message: string, payload?: unknown): void {
-    if (payload === undefined) {
-      console.log(`[KazuFira][Recorder] ${message}`);
-      return;
-    }
-    console.log(`[KazuFira][Recorder] ${message}`, payload);
-  }
-
   constructor(options: RecorderOptions = {}) {
     const hooks = { ...(options.hooks ?? {}) };
     if (options.maskSensitiveInputs !== false) {
@@ -151,10 +143,6 @@ export class Recorder {
     this.attachListeners(root);
     this.attachNavigationListeners();
     this.options.hooks?.onRecordStart?.();
-    this.debugLog("Recording started", {
-      root: this.options.root ? "custom-root" : "document.body",
-      maskSensitiveInputs: this.options.maskSensitiveInputs !== false,
-    });
 
     this.stopWatchingShadowRoots = this.options.observeShadowRoots?.((shadowRoot) => {
       this.attachListeners(shadowRoot);
@@ -181,11 +169,6 @@ export class Recorder {
       steps: this.steps,
     };
     this.options.hooks?.onRecordStop?.(script);
-    this.debugLog("Recording stopped", {
-      steps: this.steps.length,
-      actions: this.actions.length,
-      durationMs: Math.round(performance.now() - this.startTime),
-    });
     return {
       version: 2,
       id: script.id,
@@ -268,11 +251,6 @@ export class Recorder {
       timestamp: Math.round(performance.now() - this.startTime),
     };
     this.steps.push(step);
-    this.debugLog("Navigation captured", {
-      triggeredBy,
-      url,
-      timestamp: step.timestamp,
-    });
   }
 
   private capture(
@@ -333,11 +311,6 @@ export class Recorder {
 
     this.actions.push(action);
     this.options.onAction?.(action);
-    this.debugLog("Action captured", {
-      type: action.type,
-      timestamp: action.timestamp,
-      selector: action.selector.strategies[0]?.value,
-    });
 
     if (!step) {
       return;
@@ -349,11 +322,6 @@ export class Recorder {
     }
 
     this.steps.push(mapped);
-    this.debugLog("Step mapped", {
-      type: mapped.type,
-      timestamp: "timestamp" in mapped ? mapped.timestamp : undefined,
-      selector: "selector" in mapped ? mapped.selector?.value : undefined,
-    });
   }
 
   private getCoalesceInputActionIndex(

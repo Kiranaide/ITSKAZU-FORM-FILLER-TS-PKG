@@ -40,14 +40,6 @@ export class Replayer {
   private _speedMultiplier: number;
   private listeners: Map<ReplayerEventName, Set<ReplayerListener>> = new Map();
 
-  private debugLog(message: string, payload?: unknown): void {
-    if (payload === undefined) {
-      console.log(`[KazuFira][Replayer] ${message}`);
-      return;
-    }
-    console.log(`[KazuFira][Replayer] ${message}`, payload);
-  }
-
   constructor(options: ReplayOptions) {
     this.options = options;
     this._speedMultiplier = options.speedMultiplier ?? 1;
@@ -76,12 +68,6 @@ export class Replayer {
 
     const script = normalizeReplayScriptInput(this.options.script);
     this.options.hooks?.onReplayStart?.(script);
-    this.debugLog("Replay started", {
-      scriptId: script.id,
-      scriptName: script.name,
-      totalSteps: script.steps.length,
-      speedMultiplier: this._speedMultiplier,
-    });
 
     let status: "success" | "error" = "success";
     const speedMultiplier = this._speedMultiplier;
@@ -94,11 +80,6 @@ export class Replayer {
 
         this.currentStepIndex = index;
         const stepStart = performance.now();
-        this.debugLog("Step started", {
-          index,
-          type: step.type,
-          timestamp: "timestamp" in step ? step.timestamp : undefined,
-        });
 
         let localState: ReplayerState = this.currentState;
         while ((localState as string) === "paused") {
@@ -132,14 +113,12 @@ export class Replayer {
 
         const shouldProceed = (await this.options.onBeforeAction?.(step)) ?? true;
         if (!shouldProceed) {
-          this.debugLog("Step skipped by onBeforeAction", { index, type: step.type });
           this.recordTiming(index, step, stepStart);
           this.emit("step", { name: "step", step, index });
           continue;
         }
 
         if (step.type === "navigate") {
-          this.debugLog("Navigate step acknowledged", { index, url: step.url });
           this.recordTiming(index, step, stepStart);
           this.emit("step", { name: "step", step, index });
           continue;
@@ -147,11 +126,6 @@ export class Replayer {
 
         if (step.type === "assert") {
           const assertSuccess = await this.executeAssertion(step);
-          this.debugLog("Assertion executed", {
-            index,
-            assertion: step.assertion,
-            success: assertSuccess,
-          });
           this.recordTiming(index, step, stepStart);
           this.emit("step", { name: "step", step, index });
           if (!assertSuccess) {
@@ -182,11 +156,6 @@ export class Replayer {
           }
           this.recordTiming(index, step, stepStart);
           this.emit("step", { name: "step", step, index });
-          this.debugLog("Step failed: element not found", {
-            index,
-            type: step.type,
-            selector,
-          });
           continue;
         }
 
@@ -196,10 +165,6 @@ export class Replayer {
 
         try {
           await executeStep(step, el);
-          this.debugLog("Step executed", {
-            index,
-            type: step.type,
-          });
         } catch (error) {
           status = "error";
           this.options.hooks?.onError?.(error as Error, "replay");
@@ -221,11 +186,6 @@ export class Replayer {
       }
       this.options.hooks?.onReplayEnd?.(script, status);
       this.emit("done", { name: "done", status });
-      this.debugLog("Replay finished", {
-        status,
-        processedSteps: this.timings.length,
-        finalState: this.currentState,
-      });
     }
 
     const endTime = performance.now();
