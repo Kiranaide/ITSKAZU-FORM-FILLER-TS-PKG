@@ -1,4 +1,4 @@
-import { type FormScript, migrateScript } from "kazu-fira";
+import { type FormScript, normalizeScriptInput } from "kazu-fira";
 
 const STORAGE_KEY = "kazu-fira:scripts";
 
@@ -7,14 +7,14 @@ export function saveScript(
   storage: Storage = localStorage,
 ): void {
   const existing = loadAllScripts(storage);
-  existing.push(migrateScript(script));
+  existing.push(normalizeScriptInput(script));
   storage.setItem(STORAGE_KEY, JSON.stringify(existing));
 }
 
 export function loadAllScripts(storage: Storage = localStorage): FormScript[] {
   try {
     const parsed = JSON.parse(storage.getItem(STORAGE_KEY) ?? "[]") as unknown[];
-    return parsed.map((item) => migrateScript(item));
+    return parsed.map((item) => normalizeScriptInput(item as FormScript));
   } catch {
     return [];
   }
@@ -26,7 +26,7 @@ export function deleteScript(name: string, storage: Storage = localStorage): voi
 }
 
 export function exportScript(script: FormScript): void {
-  const normalized = migrateScript(script);
+  const normalized = normalizeScriptInput(script);
   const blob = new Blob([JSON.stringify(normalized, null, 2)], {
     type: "application/json",
   });

@@ -17,7 +17,10 @@ describe("recorder", () => {
     form.append(input, checkbox);
     document.body.append(form);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({
+      root: document.body,
+      maskSensitiveInputs: false,
+    });
     recorder.start();
 
     input.value = "user@example.com";
@@ -65,7 +68,7 @@ describe("recorder", () => {
 
     expect(actions).toHaveLength(1);
     expect(actions[0]?.type).toBe("input");
-    expect(actions[0]?.value).toBe("[masked]");
+    expect(actions[0]?.value).toBe("[MASKED]");
   });
 
   it("captures password values when sensitive masking is disabled", () => {
@@ -99,7 +102,8 @@ describe("recorder", () => {
 
     const select = document.createElement("select");
     select.name = "country";
-    select.innerHTML = '<option value="id">ID</option><option value="us">US</option>';
+    select.innerHTML =
+      '<option value="id">ID</option><option value="us">US</option>';
 
     const radioA = document.createElement("input");
     radioA.type = "radio";
@@ -114,7 +118,7 @@ describe("recorder", () => {
     form.append(select, radioA, radioB);
     document.body.append(form);
 
-    const recorder = new Recorder({ root: document.body });
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
     recorder.start();
 
     select.value = "us";
@@ -153,12 +157,19 @@ describe("recorder", () => {
     input.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
     input.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
     button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
 
     const script = recorder.stop();
     const actions = script.actions ?? [];
 
-    expect(actions.map((action) => action.type)).toEqual(["focus", "blur", "click", "submit"]);
+    expect(actions.map((action) => action.type)).toEqual([
+      "focus",
+      "blur",
+      "click",
+      "submit",
+    ]);
     expect(actions.every((action) => action.delay === 0)).toBe(true);
   });
 
@@ -169,11 +180,15 @@ describe("recorder", () => {
     input.id = "email";
     document.body.append(input);
 
-    const recorder = new Recorder({ root: document.body });
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
     recorder.start();
 
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
 
     const script = recorder.stop();
     const actions = script.actions ?? [];
@@ -192,7 +207,7 @@ describe("recorder", () => {
     option.setAttribute("aria-label", "Facility class option");
     document.body.append(option);
 
-    const recorder = new Recorder({ root: document.body });
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
     recorder.start();
     option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const script = recorder.stop();
@@ -226,7 +241,7 @@ describe("recorder", () => {
     if (!step || step.type !== "click") {
       throw new Error("Expected click step");
     }
-    expect(step.selector).toEqual({ kind: "id", value: "react-select-2-input" });
+    expect(step.selector.kind).not.toBe("id");
   });
 
   it("captures multi-select as string array", () => {
@@ -302,6 +317,180 @@ describe("recorder", () => {
     expect(script.steps?.[0]?.type).toBe("input");
     if (script.steps?.[0]?.type === "input") {
       expect(script.steps[0].value).toBe("500");
+    }
+  });
+
+  it("coalesces input and blur-triggered change across Tab keypress", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.name = "userName";
+    document.body.append(input);
+
+    const recorder = new Recorder({ root: document.body });
+    recorder.start();
+
+    input.value = "testing_user";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const script = recorder.stop();
+
+    expect(script.actions?.map((action) => action.type)).toEqual([
+      "input",
+      "keyboard",
+    ]);
+    expect(script.actions?.[0]?.value).toBe("testing_user");
+    expect(script.steps?.map((step) => step.type)).toEqual([
+      "input",
+      "keyboard",
+    ]);
+    if (script.steps?.[0]?.type === "input") {
+      expect(script.steps[0].value).toBe("testing_user");
+      expect(["tab", "change"]).toContain(script.steps[0].metadata?.commitReason);
+    }
+  });
+
+  it("captures react-select option as semantic select step", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "react-select-10-input";
+    input.setAttribute("role", "combobox");
+    const option = document.createElement("div");
+    option.setAttribute("role", "option");
+    option.setAttribute("data-value", "agency");
+    option.textContent = "Agency Banking";
+    document.body.append(input, option);
+
+    const recorder = new Recorder({ root: document.body });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const script = recorder.stop();
+
+    const selectStep = script.steps?.find((step) => step.type === "select");
+    expect(selectStep?.type).toBe("select");
+    if (selectStep?.type === "select") {
+      expect(selectStep.value).toBe("agency");
+      expect(selectStep.metadata?.controlType).toBe("react-select");
+      expect(selectStep.metadata?.optionLabel).toBe("Agency Banking");
+    }
+  });
+
+  it("does not capture unrelated role option as react-select selection", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "react-select-10-input";
+    input.setAttribute("role", "combobox");
+    const unrelatedOption = document.createElement("div");
+    unrelatedOption.setAttribute("role", "option");
+    unrelatedOption.textContent = "Calendar option-like cell";
+    document.body.append(input, unrelatedOption);
+
+    const recorder = new Recorder({ root: document.body });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    unrelatedOption.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const script = recorder.stop();
+
+    const selectSteps = script.steps?.filter((step) => step.type === "select") ?? [];
+    expect(selectSteps).toHaveLength(0);
+  });
+
+  it("collapses react-datepicker month/year/day into semantic date input step", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "react-datepicker-ignore-onclickoutside";
+    const month = document.createElement("select");
+    month.className = "react-datepicker__month-select";
+    month.innerHTML = '<option value="2">March</option>';
+    const year = document.createElement("select");
+    year.className = "react-datepicker__year-select";
+    year.innerHTML = '<option value="1966">1966</option>';
+    const day = document.createElement("div");
+    day.setAttribute("aria-label", "Choose Wednesday, March 9th, 1966");
+    document.body.append(input, month, year, day);
+
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    month.value = "2";
+    month.dispatchEvent(new Event("change", { bubbles: true }));
+    year.value = "1966";
+    year.dispatchEvent(new Event("change", { bubbles: true }));
+    input.value = "03/09/1966";
+    day.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const script = recorder.stop();
+
+    expect(script.steps?.some((step) => step.type === "select")).toBe(false);
+    const dateStep = script.steps?.find((step) => step.type === "input");
+    expect(dateStep?.type).toBe("input");
+    if (dateStep?.type === "input") {
+      expect(dateStep.metadata?.controlType).toBe("datepicker");
+      expect(dateStep.metadata?.commitReason).toBe("calendar-day");
+      expect(dateStep.metadata?.normalizedValue).toBe("1966-03-09");
+      expect(dateStep.value).toBe("03/09/1966");
+    }
+  });
+
+  it("captures datepicker input commit without calendar day click", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "react-datepicker-ignore-onclickoutside";
+    document.body.append(input);
+
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    input.value = "03/09/1966";
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const script = recorder.stop();
+
+    const dateStep = script.steps?.find((step) => step.type === "input");
+    expect(dateStep?.type).toBe("input");
+    if (dateStep?.type === "input") {
+      expect(dateStep.metadata?.controlType).toBe("datepicker");
+      expect(dateStep.metadata?.commitReason).toBe("change");
+      expect(dateStep.value).toBe("03/09/1966");
+    }
+  });
+
+  it("infers datepicker value from open picker when input stays empty", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "react-datepicker-ignore-onclickoutside";
+    const popper = document.createElement("div");
+    popper.className = "react-datepicker-popper";
+    const month = document.createElement("select");
+    month.className = "react-datepicker__month-select";
+    month.innerHTML = '<option value="2">March</option>';
+    month.value = "2";
+    const year = document.createElement("select");
+    year.className = "react-datepicker__year-select";
+    year.innerHTML = '<option value="1966">1966</option>';
+    year.value = "1966";
+    const day = document.createElement("div");
+    day.className = "react-datepicker__day react-datepicker__day--keyboard-selected";
+    day.textContent = "9";
+    popper.append(month, year, day);
+    document.body.append(input, popper);
+
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const script = recorder.stop();
+
+    const dateStep = script.steps?.find((step) => step.type === "input");
+    expect(dateStep?.type).toBe("input");
+    if (dateStep?.type === "input") {
+      expect(dateStep.metadata?.controlType).toBe("datepicker");
+      expect(dateStep.metadata?.normalizedValue).toBe("1966-03-09");
+      expect(dateStep.value).toBe("03/09/1966");
     }
   });
 });

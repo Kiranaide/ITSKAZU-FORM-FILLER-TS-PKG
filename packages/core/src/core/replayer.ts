@@ -1,5 +1,6 @@
 import { sleep } from "../utils/timing";
 import type {
+  AssertionProperty,
   AssertStep,
   FormScript,
   FormScriptStep,
@@ -11,7 +12,22 @@ import { normalizeScriptInput as normalizeReplayScriptInput } from "./script-nor
 import { resolveByFormSelectorStrategy, selectorStrategyToQuery } from "./selector";
 import type { ReplayOptions } from "./types";
 
-export type ReplayerState = "idle" | "playing" | "paused" | "stopped";
+export type ReplayerState = "idle" | "playing" | "paused" | "stopped" | "done";
+type ReplayerEventName = "step" | "pause" | "resume" | "done" | "breakpoint";
+type ReplayerEventPayload =
+  | { name: "step"; step: FormScriptStep; index: number }
+  | { name: "pause"; index: number }
+  | { name: "resume"; index: number }
+  | { name: "done"; status: "success" | "error" }
+  | { name: "breakpoint"; index: number; step: FormScriptStep };
+type ReplayerListener = (payload: ReplayerEventPayload) => void;
+
+export class AssertionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AssertionError";
+  }
+}
 
 export class Replayer {
   private options: ReplayOptions;
@@ -22,6 +38,7 @@ export class Replayer {
   private pausedPromiseResolve: ((value: void) => void) | null = null;
   private timings: StepTiming[] = [];
   private _speedMultiplier: number;
+  private listeners: Map<ReplayerEventName, Set<ReplayerListener>> = new Map();
 
   constructor(options: ReplayOptions) {
     this.options = options;
@@ -40,11 +57,14 @@ export class Replayer {
     return this.currentState;
   }
 
-  async play(): Promise<ReplayPerformanceResult> {
+  async play(params?: { speed?: number }): Promise<ReplayPerformanceResult> {
     const startTime = performance.now();
     this.currentState = "playing";
     this.aborted = false;
     this.timings = [];
+    if (params?.speed) {
+      this.speedMultiplier = params.speed;
+    }
 
     const script = normalizeReplayScriptInput(this.options.script);
     this.options.hooks?.onReplayStart?.(script);
@@ -77,6 +97,7 @@ export class Replayer {
         if (this.aborted) break;
 
         if (this.breakpoints.has(index) && (this.currentState as string) === "playing") {
+          this.emit("breakpoint", { name: "breakpoint", index, step });
           await this.pause();
           continue;
         }
@@ -86,30 +107,30 @@ export class Replayer {
             await sleep(step.ms / speedMultiplier);
           }
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
         const shouldProceed = (await this.options.onBeforeAction?.(step)) ?? true;
         if (!shouldProceed) {
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
         if (step.type === "navigate") {
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
         if (step.type === "assert") {
           const assertSuccess = await this.executeAssertion(step);
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           if (!assertSuccess) {
             status = "error";
-            const err = new Error(
-              `Assertion failed: ${step.assertion}${
-                step.expected ? ` expected "${step.expected}"` : ""
-              }`,
-            );
+            const err = new AssertionError(buildAssertionErrorMessage(step, index));
             this.options.hooks?.onError?.(err, "replay");
             const resolution = await this.onErrorHandler(step, err);
             if (resolution === "abort") {
@@ -134,6 +155,7 @@ export class Replayer {
             this.currentState = "stopped";
           }
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
@@ -154,22 +176,33 @@ export class Replayer {
         }
 
         this.recordTiming(index, step, stepStart);
+        this.emit("step", { name: "step", step, index });
         this.options.onAfterAction?.(step, el);
         this.options.hooks?.onReplayStep?.(step, index);
       }
     } finally {
+      if (this.currentState !== "stopped") {
+        this.currentState = "done";
+      }
       this.options.hooks?.onReplayEnd?.(script, status);
+      this.emit("done", { name: "done", status });
     }
 
     const endTime = performance.now();
+    const totalDurationMs = endTime - startTime;
+    const slowThreshold = this.options.slowThreshold ?? 500;
+    const slowSteps = this.timings.filter((timing) => timing.durationMs > slowThreshold);
     return {
       scriptId: script.id,
       scriptName: script.name,
-      totalDurationMs: endTime - startTime,
+      totalMs: totalDurationMs,
+      totalDurationMs,
+      timings: this.timings,
       stepTimings: this.timings,
+      slowSteps,
       startTime,
       endTime,
-      stepsPerSecond: this.timings.length / ((endTime - startTime) / 1000),
+      stepsPerSecond: this.timings.length / (totalDurationMs / 1000),
     };
   }
 
@@ -252,6 +285,7 @@ export class Replayer {
   async pause(): Promise<void> {
     if (this.currentState !== "playing") return;
     this.currentState = "paused";
+    this.emit("pause", { name: "pause", index: this.currentStepIndex });
     return new Promise((resolve) => {
       this.pausedPromiseResolve = resolve;
     });
@@ -260,6 +294,7 @@ export class Replayer {
   resume(): void {
     if (this.currentState !== "paused") return;
     this.currentState = "playing";
+    this.emit("resume", { name: "resume", index: this.currentStepIndex });
     this.pausedPromiseResolve?.();
   }
 
@@ -315,9 +350,28 @@ export class Replayer {
     return this.currentStepIndex;
   }
 
+  on(eventName: ReplayerEventName, listener: ReplayerListener): () => void {
+    const listeners = this.listeners.get(eventName) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(eventName, listeners);
+    return () => {
+      listeners.delete(listener);
+    };
+  }
+
+  off(eventName: ReplayerEventName, listener: ReplayerListener): void {
+    this.listeners.get(eventName)?.delete(listener);
+  }
+
   private async onErrorHandler(step: FormScriptStep, error: Error): Promise<"skip" | "abort"> {
     if (!this.options.onError) return "skip";
     return this.options.onError(step, error);
+  }
+
+  private emit(eventName: ReplayerEventName, payload: ReplayerEventPayload): void {
+    this.listeners.get(eventName)?.forEach((listener) => {
+      listener(payload);
+    });
   }
 
   private async resolveElementWithRetry(selector: SelectorStrategy): Promise<Element | null> {
@@ -337,6 +391,36 @@ export class Replayer {
   }
 }
 
+export function createAssertStep(
+  selector: SelectorStrategy,
+  property: AssertionProperty,
+  expected?: string | boolean,
+): AssertStep {
+  const assertion =
+    property === "checked"
+      ? expected
+        ? "checked"
+        : "unchecked"
+      : property === "text"
+        ? "text"
+        : property === "value"
+          ? "value"
+          : expected
+            ? "visible"
+            : "hidden";
+  const step: AssertStep = {
+    type: "assert",
+    selector,
+    property,
+    assertion,
+    timestamp: Date.now(),
+  };
+  if (expected !== undefined) {
+    step.expected = typeof expected === "boolean" ? String(expected) : expected;
+  }
+  return step;
+}
+
 async function executeStep(step: FormScriptStep, el: Element): Promise<void> {
   const maybeScrollable = el as HTMLElement & {
     scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
@@ -344,10 +428,23 @@ async function executeStep(step: FormScriptStep, el: Element): Promise<void> {
   maybeScrollable.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 
   if (step.type === "input") {
+    if (step.metadata?.controlType === "datepicker" && step.metadata.optionLabel) {
+      await selectDatePickerDay(el, step.metadata.optionLabel, step.metadata.normalizedValue);
+      return;
+    }
+    if (step.metadata?.controlType === "datepicker") {
+      const value = step.value || toDisplayDate(step.metadata.normalizedValue) || "";
+      await setDatePickerInputValue(el, value);
+      return;
+    }
     await setInputValue(el as HTMLInputElement | HTMLTextAreaElement, step.value);
     return;
   }
   if (step.type === "select") {
+    if (step.metadata?.controlType === "react-select") {
+      await selectReactSelectOption(el, step);
+      return;
+    }
     const select = el as HTMLSelectElement;
     if (select.multiple && step.value.includes("||")) {
       const chosen = new Set(step.value.split("||"));
@@ -380,6 +477,288 @@ async function executeStep(step: FormScriptStep, el: Element): Promise<void> {
       }),
     );
   }
+}
+
+async function selectDatePickerDay(
+  el: Element,
+  dayAriaLabel: string,
+  normalizedValue?: string,
+): Promise<void> {
+  const trigger = el as HTMLElement;
+  trigger.click();
+  const ariaLookupTimeoutMs = normalizedValue ? 260 : 1400;
+  const dayByAria = await waitForElement(
+    () => findVisibleElementByAriaLabel(dayAriaLabel),
+    ariaLookupTimeoutMs,
+    50,
+  );
+  if (dayByAria) {
+    dayByAria.click();
+    return;
+  }
+
+  const dayByNormalized = normalizedValue
+    ? await findDatePickerDayByNormalizedValue(normalizedValue)
+    : null;
+  if (dayByNormalized) {
+    dayByNormalized.click();
+    return;
+  }
+
+  throw new Error(`Datepicker day not found (${dayAriaLabel})`);
+}
+
+async function setDatePickerInputValue(el: Element, value: string): Promise<void> {
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  const prototype =
+    el instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+  const nativeValueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  nativeValueSetter?.call(el, value);
+  if (el.value !== value) {
+    el.value = value;
+  }
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  (el as HTMLElement).dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+  await sleep(10);
+}
+
+function toDisplayDate(isoDate: string | undefined): string | null {
+  if (!isoDate) {
+    return null;
+  }
+  const parsed = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parsed) {
+    return null;
+  }
+  const [, yyyy, mm, dd] = parsed;
+  if (!yyyy || !mm || !dd) {
+    return null;
+  }
+  return `${mm}/${dd}/${yyyy}`;
+}
+
+async function findDatePickerDayByNormalizedValue(isoDate: string): Promise<HTMLElement | null> {
+  const parsed = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parsed) {
+    return null;
+  }
+  const [, yyyy, mm, dd] = parsed;
+  if (!yyyy || !mm || !dd) {
+    return null;
+  }
+
+  const popper = getVisibleDatePickerPopper();
+  if (!popper) {
+    return null;
+  }
+
+  const monthSelect = popper.querySelector(".react-datepicker__month-select");
+  const yearSelect = popper.querySelector(".react-datepicker__year-select");
+  if (monthSelect instanceof HTMLSelectElement) {
+    const targetMonth = String(Number(mm) - 1);
+    if (monthSelect.value !== targetMonth) {
+      monthSelect.value = targetMonth;
+      monthSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      await sleep(35);
+    }
+  }
+  if (yearSelect instanceof HTMLSelectElement) {
+    if (yearSelect.value !== yyyy) {
+      yearSelect.value = yyyy;
+      yearSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      await sleep(35);
+    }
+  }
+
+  const dayClassThreeDigits = `.react-datepicker__day--${String(Number(dd)).padStart(3, "0")}`;
+  const dayClassTwoDigits = `.react-datepicker__day--${dd}`;
+  const allMatches = Array.from(
+    popper.querySelectorAll(`${dayClassThreeDigits}, ${dayClassTwoDigits}`),
+  );
+  const inMonth = allMatches.find(
+    (candidate) =>
+      candidate instanceof HTMLElement &&
+      !candidate.classList.contains("react-datepicker__day--outside-month"),
+  );
+  if (inMonth instanceof HTMLElement) {
+    return inMonth;
+  }
+  const anyVisible = allMatches.find((candidate) => candidate instanceof HTMLElement);
+  return anyVisible instanceof HTMLElement ? anyVisible : null;
+}
+
+function getVisibleDatePickerPopper(): HTMLElement | null {
+  const poppers = Array.from(document.querySelectorAll(".react-datepicker-popper"));
+  const visible = poppers.find(
+    (candidate) => candidate instanceof HTMLElement && isElementVisible(candidate),
+  );
+  return visible instanceof HTMLElement ? visible : null;
+}
+
+async function selectReactSelectOption(
+  el: Element,
+  step: Extract<FormScriptStep, { type: "select" }>,
+): Promise<void> {
+  const input = resolveReactSelectInput(el);
+  await ensureReactSelectMenuOpen(el, input);
+
+  const option = await waitForElement(
+    () =>
+      findReactSelectOption(input, {
+        label: step.metadata?.optionLabel,
+        optionId: step.metadata?.optionId,
+        fallbackLabel: step.value,
+      }),
+    1400,
+    50,
+  );
+  option?.click();
+}
+
+function resolveReactSelectInput(el: Element): HTMLInputElement | null {
+  if (el instanceof HTMLInputElement) {
+    return el;
+  }
+  const control = findReactSelectControl(el);
+  if (!control) {
+    return null;
+  }
+  const input = control.querySelector(
+    "input[role='combobox'][id^='react-select-'], input[id^='react-select-'][type='text']",
+  );
+  return input instanceof HTMLInputElement ? input : null;
+}
+
+function findReactSelectOptionByLabel(
+  label: string | undefined,
+  root: ParentNode = document,
+): HTMLElement | null {
+  if (!label) {
+    return null;
+  }
+  const normalized = label.trim();
+  if (!normalized) {
+    return null;
+  }
+  const options = Array.from(root.querySelectorAll("[role='option']"));
+  const match = options.find((option) => (option.textContent ?? "").trim() === normalized);
+  return match instanceof HTMLElement && isElementVisible(match) ? match : null;
+}
+
+function findReactSelectOptionById(
+  optionId: string | undefined,
+  root: ParentNode = document,
+): HTMLElement | null {
+  if (!optionId) {
+    return null;
+  }
+  const escaped = CSS.escape(optionId);
+  const option = root.querySelector(
+    `[role='option'][data-value="${escaped}"], [role='option'][data-id="${escaped}"], [data-value="${escaped}"], [data-id="${escaped}"]`,
+  );
+  return option instanceof HTMLElement && isElementVisible(option) ? option : null;
+}
+
+function findVisibleElementByAriaLabel(label: string): HTMLElement | null {
+  const allWithAriaLabel = Array.from(document.querySelectorAll("[aria-label]"));
+  const match = allWithAriaLabel.find((candidate) => candidate.getAttribute("aria-label") === label);
+  return match instanceof HTMLElement && isElementVisible(match) ? match : null;
+}
+
+async function ensureReactSelectMenuOpen(
+  el: Element,
+  input: HTMLInputElement | null,
+): Promise<void> {
+  const trigger = input ?? (el as HTMLElement);
+  if (input?.getAttribute("aria-expanded") === "true") {
+    return;
+  }
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const control = findReactSelectControl(el);
+    if (control) {
+      control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    }
+    trigger.click();
+    await sleep(45);
+    if (input?.getAttribute("aria-expanded") === "true" || findReactSelectListbox(input)) {
+      return;
+    }
+  }
+}
+
+function findReactSelectOption(
+  input: HTMLInputElement | null,
+  targets: {
+    label: string | undefined;
+    optionId: string | undefined;
+    fallbackLabel: string | undefined;
+  },
+): HTMLElement | null {
+  const listbox = findReactSelectListbox(input);
+  if (listbox) {
+    return (
+      findReactSelectOptionByLabel(targets.label, listbox) ??
+      findReactSelectOptionById(targets.optionId, listbox) ??
+      findReactSelectOptionByLabel(targets.fallbackLabel, listbox)
+    );
+  }
+
+  return (
+    findReactSelectOptionByLabel(targets.label) ??
+    findReactSelectOptionById(targets.optionId) ??
+    findReactSelectOptionByLabel(targets.fallbackLabel)
+  );
+}
+
+function findReactSelectListbox(input: HTMLInputElement | null): HTMLElement | null {
+  const controlsId = input?.getAttribute("aria-controls");
+  if (controlsId) {
+    const fromAriaControls = document.getElementById(controlsId);
+    if (fromAriaControls instanceof HTMLElement) {
+      return fromAriaControls;
+    }
+  }
+  const visibleListbox = Array.from(document.querySelectorAll("[role='listbox']")).find((node) =>
+    isElementVisible(node as HTMLElement),
+  );
+  return visibleListbox instanceof HTMLElement ? visibleListbox : null;
+}
+
+async function waitForElement<T>(
+  factory: () => T | null,
+  timeoutMs: number,
+  intervalMs: number,
+): Promise<T | null> {
+  const start = Date.now();
+  while (Date.now() - start <= timeoutMs) {
+    const value = factory();
+    if (value) {
+      return value;
+    }
+    await sleep(intervalMs);
+  }
+  return factory();
+}
+
+function isElementVisible(el: HTMLElement): boolean {
+  if (!el.isConnected) {
+    return false;
+  }
+  if (el.getAttribute("aria-hidden") === "true") {
+    return false;
+  }
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden") {
+    return false;
+  }
+  return true;
 }
 
 async function setInputValue(
@@ -488,6 +867,12 @@ function describeReactSelectLookup(selector: SelectorStrategy): string {
   }
   const fallbackMatches = document.querySelectorAll(`[id$="${suffix}"]`).length;
   return `fallback="[id$='${suffix}']" matches=${fallbackMatches}`;
+}
+
+function buildAssertionErrorMessage(step: AssertStep, index: number): string {
+  const target = step.selector ? selectorStrategyToQuery(step.selector) : "<unknown-selector>";
+  const expectedText = step.expected !== undefined ? ` expected=${String(step.expected)}` : "";
+  return `Assert failed: ${target} ${step.assertion}${expectedText} at step ${index}`;
 }
 
 function getReactSelectStableSuffix(id: string): string | null {

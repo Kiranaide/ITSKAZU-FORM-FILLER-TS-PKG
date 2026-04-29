@@ -42,6 +42,7 @@ bun --filter "./apps/ext" run dev
 5. Submit a PR
 
 We squash-merge all PRs.
+Changeset files are required for any public API change (including deprecations and removals).
 
 ## Release
 

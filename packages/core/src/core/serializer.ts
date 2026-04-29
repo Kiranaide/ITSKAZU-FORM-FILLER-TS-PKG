@@ -1,4 +1,4 @@
-import { migrateScript } from "./migrations";
+import { validateScript } from "./migrations";
 import type { FormScript } from "./schema";
 
 export function serializeScript(script: FormScript, pretty = true): string {
@@ -7,7 +7,7 @@ export function serializeScript(script: FormScript, pretty = true): string {
 
 export function deserializeScript(raw: string): FormScript {
   try {
-    return migrateScript(JSON.parse(raw) as unknown);
+    return validateScript(JSON.parse(raw) as unknown);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown parse error";
     throw new Error(`Invalid script JSON: ${message}`);

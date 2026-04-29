@@ -10,6 +10,10 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +28,7 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - run: bun install --frozen-lockfile
+      - run: bun ci
 
       - name: Type check
         run: bun run type-check
@@ -44,6 +48,9 @@ jobs:
       - name: Build workspaces
         run: bun run build
 
+      - name: Tree-shake smoke test
+        run: bun run test:tree-shake
+
       - name: Build extension artifact
         run: bun --filter @itskazu/ext run build:ext && bun --filter @itskazu/ext run zip:ext
 
@@ -60,3 +67,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true

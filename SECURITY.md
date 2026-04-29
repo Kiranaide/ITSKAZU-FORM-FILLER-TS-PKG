@@ -4,11 +4,22 @@
 
 | Version | Supported |
 | ------- | -------- |
-| 1.4.x   | ✅ |
-| < 1.4    | ❌ |
+| Latest release | ✅ |
+| Older releases | ❌ |
 
 ## Reporting a Vulnerability
 
-Please report vulnerabilities via [GitHub Security Advisories](https://github.com/Kiranaide/Kazu-Fira/security/advisories/new/responsible) or email directly.
+Please report vulnerabilities through [GitHub Security Advisories](https://github.com/Kiranaide/Kazu-Fira/security/advisories/new/responsible).
 
-Expected response time: 48 hours.
+Please include:
+- A clear summary and impact statement
+- Reproduction steps or proof-of-concept
+- Affected versions and suggested remediation (if known)
+
+Expected first response time: within 72 hours.
+
+## Dependency Security Expectations
+
+- Dependency scanning and vulnerability triage are required for releases.
+- Critical and high severity dependency issues should be patched or mitigated before release.
+- Public release artifacts should keep provenance enabled in CI.

@@ -1,8 +1,8 @@
 import "../setup";
 import { describe, expect, it } from "vitest";
 import { Replayer } from "../../src/core/replayer";
-import { extractSelectors, resolveElement } from "../../src/core/selector";
 import type { FormScript } from "../../src/core/schema";
+import { extractSelectors, resolveElement } from "../../src/core/selector";
 
 function createV2Script(steps: FormScript["steps"]): FormScript {
   return {
@@ -45,7 +45,13 @@ describe("shadow dom e2e", () => {
     document.body.append(host);
 
     const script = createV2Script([
-      { type: "input", selector: { kind: "name", value: "shadowField" }, value: "inside-shadow", masked: false, timestamp: 0 },
+      {
+        type: "input",
+        selector: { kind: "name", value: "shadowField" },
+        value: "inside-shadow",
+        masked: false,
+        timestamp: 0,
+      },
     ]);
 
     await new Replayer({ script }).play();

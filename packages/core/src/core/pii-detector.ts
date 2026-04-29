@@ -1,6 +1,5 @@
 import { matchesAnySelector } from "../utils/dom";
-import type { FormScriptStep, SelectorStrategy } from "./schema";
-import { extractSelectors, toFormSelectorStrategy } from "./selector";
+import type { FormScriptStep } from "./schema";
 import type { ElementSelector } from "./types";
 
 export interface PIIMaskingConfig {
@@ -22,8 +21,10 @@ const DEFAULT_MASK_SELECTORS = [
   '[autocomplete*="cc-csc"]',
   '[autocomplete*="cc-exp"]',
 ];
+export const MASK_PLACEHOLDER = "[MASKED]";
 
-const BUILTIN_PATTERNS: Record<string, RegExp> = {
+type BuiltinPatternKey = "email" | "phone" | "credit-card" | "ssn" | "date-of-birth";
+const BUILTIN_PATTERNS: Record<BuiltinPatternKey, RegExp> = {
   email: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
   phone: /^\+?[\d\s\-().]{10,}$/,
   "credit-card": /^[\d\s-]{13,19}$/,
@@ -36,14 +37,14 @@ export function createDefaultPIIConfig(): PIIMaskingConfig {
     enabled: true,
     selectors: [...DEFAULT_MASK_SELECTORS],
     fields: [
-      { type: "email", pattern: BUILTIN_PATTERNS["email"]! },
-      { type: "phone", pattern: BUILTIN_PATTERNS["phone"]! },
-      { type: "credit-card", pattern: BUILTIN_PATTERNS["credit-card"]! },
-      { type: "ssn", pattern: BUILTIN_PATTERNS["ssn"]! },
+      { type: "email", pattern: BUILTIN_PATTERNS["email"] },
+      { type: "phone", pattern: BUILTIN_PATTERNS["phone"] },
+      { type: "credit-card", pattern: BUILTIN_PATTERNS["credit-card"] },
+      { type: "ssn", pattern: BUILTIN_PATTERNS["ssn"] },
       { type: "password" },
-      { type: "date-of-birth", pattern: BUILTIN_PATTERNS["date-of-birth"]! },
+      { type: "date-of-birth", pattern: BUILTIN_PATTERNS["date-of-birth"] },
     ],
-    maskValue: "[masked]",
+    maskValue: MASK_PLACEHOLDER,
   };
 }
 
@@ -67,7 +68,7 @@ export class PIIDetector {
       if (!value) return false;
 
       for (const field of this.config.fields) {
-        if (field.pattern && field.pattern.test(value)) {
+        if (field.pattern?.test(value)) {
           return true;
         }
         const autocomplete = element.getAttribute("autocomplete")?.toLowerCase();
@@ -83,7 +84,7 @@ export class PIIDetector {
     return false;
   }
 
-  maskValue(value: string, type?: string): string {
+  maskValue(_value: string, _type?: string): string {
     return this.config.maskValue;
   }
 
@@ -111,6 +112,6 @@ export function maskStepValue(step: FormScriptStep): FormScriptStep {
 
   return {
     ...step,
-    value: step.masked ? "[masked]" : step.value,
+    value: step.masked ? MASK_PLACEHOLDER : step.value,
   };
 }

@@ -27,6 +27,8 @@ describe("selector", () => {
     expect(selector.label).toBe("Email");
     expect(selector.strategies.map((item) => item.type)).toContain("id");
     expect(selector.strategies.map((item) => item.type)).toContain("name");
+    expect(selector.source).toBe("id");
+    expect(selector.confidence).toBe("high");
     expect(resolveElement(selector)).toBe(input);
   });
 
@@ -69,6 +71,17 @@ describe("selector", () => {
       value: "react-select-2-option-1",
     });
     expect(resolved).toBe(option);
+  });
+
+  it("treats react-select combobox ids as dynamic", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "react-select-2-input";
+    input.setAttribute("role", "combobox");
+    document.body.append(input);
+
+    const selector = extractSelectors(input);
+    expect(selector.strategies.some((strategy) => strategy.type === "id")).toBe(false);
   });
 
   it("resolves react-select options from menu classes by option index", () => {
@@ -157,6 +170,7 @@ describe("selector", () => {
     const selector = extractSelectors(input);
     const values = selector.strategies.map((item) => item.value);
     expect(values.some((value) => value.startsWith('[placeholder="'))).toBe(true);
+    expect(selector.strategies.some((item) => item.source === "placeholder")).toBe(true);
     expect(
       values.some((value) => value.startsWith('[aria-describedby="approved-limit-help"')),
     ).toBe(true);

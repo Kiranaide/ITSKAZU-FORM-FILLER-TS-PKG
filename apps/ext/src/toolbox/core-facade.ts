@@ -1,4 +1,5 @@
-import { Recorder, Replayer, type FormScript } from "kazu-fira";
+import { Recorder, Replayer, type FormScript, type ReplayPerformanceResult } from "kazu-fira";
+import { exportToPlaywright } from "kazu-fira/adapters";
 import { watchOpenShadowRoots } from "../adapters/shadow-dom.js";
 import {
   recordedScriptToStoredSession,
@@ -9,7 +10,9 @@ import type { StoredSessionV2 } from "../session-types.js";
 type ReplayCallbacks = {
   onStepStart?: (index: number) => void;
   onError?: (message: string) => void;
-  onComplete?: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  onComplete?: (result: ReplayPerformanceResult) => void;
 };
 
 const TOOLBOX_ROOT_ID = "__toolbox-root";
@@ -21,6 +24,7 @@ function createIgnoreSelector(): string[] {
 
 export function createToolboxCoreFacade() {
   let recorder: Recorder | null = null;
+  let activeReplayer: Replayer | null = null;
 
   return {
     startRecording() {
@@ -89,9 +93,43 @@ export function createToolboxCoreFacade() {
           return "skip";
         },
       });
+      activeReplayer = replayer;
+      replayer.on("pause", () => callbacks.onPause?.());
+      replayer.on("resume", () => callbacks.onResume?.());
 
-      await replayer.play();
-      callbacks.onComplete?.();
+      try {
+        const result = await replayer.play();
+        callbacks.onComplete?.(result);
+      } finally {
+        activeReplayer = null;
+      }
+    },
+
+    pauseReplay() {
+      void activeReplayer?.pause();
+    },
+
+    resumeReplay() {
+      activeReplayer?.resume();
+    },
+
+    async stepReplay() {
+      if (!activeReplayer) return;
+      await activeReplayer.stepForward();
+    },
+
+    stopReplay() {
+      activeReplayer?.stop();
+      activeReplayer = null;
+    },
+
+    isReplaying() {
+      return activeReplayer !== null;
+    },
+
+    exportSessionToPlaywright(session: StoredSessionV2): string {
+      const script = storedSessionToFormScript(session);
+      return exportToPlaywright(script);
     },
   };
 }
