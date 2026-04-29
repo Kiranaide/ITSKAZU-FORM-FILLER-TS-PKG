@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const run = (command, options = {}) => {
@@ -69,6 +69,28 @@ Automated ${releaseType} release.
   console.log(`Created automatic changeset: .changeset/${filename}`);
 };
 
+const ensureNoPendingChangesetsForTypedRelease = (releaseType) => {
+  if (!releaseType) {
+    return;
+  }
+
+  const changesetDir = resolve(process.cwd(), ".changeset");
+  let entries = [];
+
+  try {
+    entries = readdirSync(changesetDir);
+  } catch {
+    return;
+  }
+
+  const pendingChangesets = entries.filter((entry) => entry.endsWith(".md"));
+  if (pendingChangesets.length > 0) {
+    fail(
+      `release type '${releaseType}' requires an empty .changeset folder, but found pending changesets: ${pendingChangesets.join(", ")}`,
+    );
+  }
+};
+
 const ensureCleanGitTree = () => {
   const status = read("git status --porcelain");
   if (status.length > 0) {
@@ -99,6 +121,7 @@ const ensureReleaseChangesExist = () => {
 ensureCleanGitTree();
 ensureMainBranch();
 const releaseType = parseReleaseType(process.argv);
+ensureNoPendingChangesetsForTypedRelease(releaseType);
 createChangesetForReleaseType(releaseType);
 run("bun run type-check");
 run("bun run test");
