@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kazu Fira",
-  "version": "0.0.1",
+  "version": "3.0.1",
   "description": "Injects the Form Filler toolbox into the active tab on click.",
   "action": {
     "default_title": "Kazu Fira"
