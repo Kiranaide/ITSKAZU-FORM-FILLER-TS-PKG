@@ -11,6 +11,7 @@ export function extractSelectors(el: Element): ElementSelector {
       type: "id",
       value: `#${CSS.escape(el.id)}`,
       confidence: 1.0,
+      source: "id",
     });
   }
 
@@ -20,6 +21,7 @@ export function extractSelectors(el: Element): ElementSelector {
       type: "name",
       value: `[name="${name}"]`,
       confidence: 0.9,
+      source: "name",
     });
   }
 
@@ -30,6 +32,7 @@ export function extractSelectors(el: Element): ElementSelector {
         type: "data-testid",
         value: `[${attr}="${val}"]`,
         confidence: 0.95,
+        source: "testid",
       });
     }
   }
@@ -66,6 +69,7 @@ export function extractSelectors(el: Element): ElementSelector {
         0.4,
         (attrConfidence[attr] ?? 0.8) + confidenceBoost + uniquenessPenalty,
       ),
+      source: attr === "placeholder" ? "placeholder" : "testid",
     });
   }
 
@@ -75,6 +79,7 @@ export function extractSelectors(el: Element): ElementSelector {
       type: "aria-label",
       value: `[aria-label="${ariaLabel}"]`,
       confidence: 0.85,
+      source: "label",
     });
   }
 
@@ -82,13 +87,18 @@ export function extractSelectors(el: Element): ElementSelector {
     type: "css",
     value: buildShortCSSSelector(el),
     confidence: 0.6,
+    source: "css",
   });
 
   const label = getAssociatedLabel(el);
 
+  const ranked = strategies.sort((a, b) => b.confidence - a.confidence);
+  const top = ranked[0];
   const result: ElementSelector = {
-    strategies: strategies.sort((a, b) => b.confidence - a.confidence),
+    strategies: ranked,
     fieldType: (el as HTMLInputElement).type ?? el.tagName.toLowerCase(),
+    source: top?.source ?? "css",
+    confidence: toConfidenceLabel(top?.confidence ?? 0),
   };
 
   if (label) {
@@ -96,6 +106,12 @@ export function extractSelectors(el: Element): ElementSelector {
   }
 
   return result;
+}
+
+function toConfidenceLabel(confidence: number): "high" | "medium" | "low" {
+  if (confidence >= 0.9) return "high";
+  if (confidence >= 0.7) return "medium";
+  return "low";
 }
 
 export function resolveElement(

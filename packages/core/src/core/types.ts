@@ -15,12 +15,15 @@ export interface ElementSelector {
   strategies: SelectorStrategy[];
   label?: string;
   fieldType?: string;
+  source?: "testid" | "role" | "label" | "placeholder" | "name" | "id" | "css";
+  confidence?: "high" | "medium" | "low";
 }
 
 export interface SelectorStrategy {
   type: "id" | "name" | "aria-label" | "data-testid" | "css" | "xpath";
   value: string;
   confidence: number;
+  source?: "testid" | "role" | "label" | "placeholder" | "name" | "id" | "css";
 }
 
 export interface RecordedAction {

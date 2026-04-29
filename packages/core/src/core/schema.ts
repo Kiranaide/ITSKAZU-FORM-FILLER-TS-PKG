@@ -7,6 +7,41 @@ export type SelectorStrategy =
   | { kind: "aria"; value: string }
   | { kind: "css"; value: string };
 
+export type ControlType =
+  | "text"
+  | "currency"
+  | "native-select"
+  | "react-select"
+  | "datepicker"
+  | "button"
+  | "unknown";
+
+export type CommitReason =
+  | "input"
+  | "change"
+  | "blur"
+  | "tab"
+  | "enter"
+  | "option-select"
+  | "calendar-day"
+  | "click"
+  | "keyboard"
+  | "unknown";
+
+export type SelectorSource = "testid" | "role" | "label" | "placeholder" | "name" | "id" | "css";
+
+export type SelectorConfidence = "high" | "medium" | "low";
+
+export interface StepMetadata {
+  controlType?: ControlType;
+  commitReason?: CommitReason;
+  normalizedValue?: string;
+  optionId?: string;
+  optionLabel?: string;
+  selectorSource?: SelectorSource;
+  selectorConfidence?: SelectorConfidence;
+}
+
 export type AssertionType =
   | "visible"
   | "hidden"
@@ -39,23 +74,27 @@ export type FormScriptStep =
       value: string;
       masked: boolean;
       timestamp: number;
+      metadata?: StepMetadata;
     }
   | {
       type: "click";
       selector: SelectorStrategy;
       timestamp: number;
+      metadata?: StepMetadata;
     }
   | {
       type: "keyboard";
       selector: SelectorStrategy;
       key: string;
       timestamp: number;
+      metadata?: StepMetadata;
     }
   | {
       type: "select";
       selector: SelectorStrategy;
       value: string;
       timestamp: number;
+      metadata?: StepMetadata;
     }
   | {
       type: "navigate";

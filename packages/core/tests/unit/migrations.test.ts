@@ -28,4 +28,38 @@ describe("validateScript", () => {
     const noVersion = { name: "No version" };
     expect(() => validateScript(noVersion)).toThrow("Unsupported script");
   });
+
+  it("should preserve optional step metadata", () => {
+    const script = {
+      version: 2,
+      id: "meta-1",
+      name: "Metadata",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      origin: "https://example.com",
+      steps: [
+        {
+          type: "input",
+          selector: { kind: "id", value: "amount" },
+          value: "5,000",
+          masked: false,
+          timestamp: 1,
+          metadata: {
+            controlType: "currency",
+            commitReason: "tab",
+            normalizedValue: "5000",
+            selectorConfidence: "high",
+          },
+        },
+      ],
+    };
+    const result = validateScript(script);
+    expect(result.steps[0]).toMatchObject({
+      type: "input",
+      metadata: {
+        controlType: "currency",
+        commitReason: "tab",
+      },
+    });
+  });
 });

@@ -27,6 +27,8 @@ describe("selector", () => {
     expect(selector.label).toBe("Email");
     expect(selector.strategies.map((item) => item.type)).toContain("id");
     expect(selector.strategies.map((item) => item.type)).toContain("name");
+    expect(selector.source).toBe("id");
+    expect(selector.confidence).toBe("high");
     expect(resolveElement(selector)).toBe(input);
   });
 
@@ -157,6 +159,7 @@ describe("selector", () => {
     const selector = extractSelectors(input);
     const values = selector.strategies.map((item) => item.value);
     expect(values.some((value) => value.startsWith('[placeholder="'))).toBe(true);
+    expect(selector.strategies.some((item) => item.source === "placeholder")).toBe(true);
     expect(
       values.some((value) => value.startsWith('[aria-describedby="approved-limit-help"')),
     ).toBe(true);

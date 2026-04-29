@@ -6,6 +6,7 @@ export interface ExportOptions {
   outputFormat: "test" | "script";
   includeAssertions: boolean;
   includeComments: boolean;
+  stableMode: boolean;
   testName?: string;
 }
 
@@ -15,6 +16,7 @@ const DEFAULT_OPTIONS: ExportOptions = {
   outputFormat: "test",
   includeAssertions: true,
   includeComments: true,
+  stableMode: true,
 };
 
 function selectorToString(selector: SelectorStrategy): string {
@@ -26,7 +28,7 @@ function selectorToString(selector: SelectorStrategy): string {
   return selector.value;
 }
 
-function generateStepCode(step: FormScriptStep, indent: number): string[] {
+function generateStepCode(step: FormScriptStep, indent: number, options: ExportOptions): string[] {
   const pad = " ".repeat(indent);
   const lines: string[] = [];
 
@@ -37,25 +39,59 @@ function generateStepCode(step: FormScriptStep, indent: number): string[] {
     step.type === "select"
   ) {
     const selectorStr = selectorToString(step.selector);
+    const targetExpr = toTargetExpression(step.selector);
     switch (step.type) {
       case "input": {
+        if (step.metadata?.controlType === "datepicker" && step.metadata.optionLabel) {
+          lines.push(`${pad}await ${targetExpr}.click();`);
+          lines.push(
+            `${pad}await page.locator('[aria-label="${escapeForCode(step.metadata.optionLabel)}"]').click();`,
+          );
+          if (options.includeAssertions) {
+            lines.push(`${pad}await expect(${targetExpr}).toHaveValue('${escapeForCode(step.value)}');`);
+          }
+          break;
+        }
         if (step.masked || step.value === "[MASKED]") {
           const envName = toEnvVarName(selectorStr);
           lines.push(`${pad}// TODO: set env var ${envName}`);
-          lines.push(`${pad}await page.fill('${selectorStr}', process.env.${envName} ?? '');`);
+          lines.push(`${pad}await ${targetExpr}.fill(process.env.${envName} ?? '');`);
           break;
         }
         const value = `'${escapeForCode(step.value)}'`;
-        lines.push(`${pad}await page.fill('${selectorStr}', ${value});`);
+        lines.push(`${pad}await ${targetExpr}.fill(${value});`);
+        if (options.includeAssertions && step.metadata?.controlType === "currency") {
+          lines.push(`${pad}await expect(${targetExpr}).toHaveValue(${value});`);
+        }
         break;
       }
       case "click":
-        lines.push(`${pad}await page.click('${selectorStr}');`);
+        lines.push(`${pad}await ${targetExpr}.click();`);
         break;
       case "select":
-        lines.push(
-          `${pad}await page.selectOption('${selectorStr}', '${escapeForCode(step.value)}');`,
-        );
+        if (step.metadata?.controlType === "react-select") {
+          lines.push(`${pad}await ${targetExpr}.click();`);
+          if (step.metadata.optionLabel) {
+            lines.push(
+              `${pad}await page.getByRole('option', { name: '${escapeForCode(step.metadata.optionLabel)}' }).click();`,
+            );
+          } else if (step.metadata.optionId) {
+            lines.push(
+              `${pad}await page.locator('[data-value="${escapeForCode(step.metadata.optionId)}"], [data-id="${escapeForCode(step.metadata.optionId)}"]').first().click();`,
+            );
+          } else {
+            lines.push(
+              `${pad}await page.locator('${selectorStr} [role="option"]').first().click();`,
+            );
+          }
+          break;
+        }
+        lines.push(`${pad}await ${targetExpr}.selectOption('${escapeForCode(step.value)}');`);
+        if (options.includeAssertions) {
+          lines.push(
+            `${pad}await expect(${targetExpr}).toHaveValue('${escapeForCode(step.value)}');`,
+          );
+        }
         break;
       case "keyboard":
         lines.push(`${pad}await page.keyboard.press('${escapeForCode(step.key)}');`);
@@ -149,7 +185,7 @@ export function exportToPlaywright(
   if (opts.outputFormat === "test") {
     lines.push(`test('${testName}', async ({ page }) => {`);
     for (const step of script.steps) {
-      lines.push(...generateStepCode(step, 2));
+      lines.push(...generateStepCode(step, 2, opts));
     }
     lines.push(`});`);
   } else {
@@ -159,7 +195,7 @@ export function exportToPlaywright(
     lines.push("");
     for (const step of script.steps) {
       if (step.type === "navigate") continue;
-      lines.push(...generateStepCode(step, 2));
+      lines.push(...generateStepCode(step, 2, opts));
     }
     lines.push(`}`);
     lines.push("");
@@ -174,6 +210,28 @@ export function exportToPlaywright(
   }
 
   return lines.join("\n");
+}
+
+function toTargetExpression(selector: SelectorStrategy): string {
+  if (selector.kind === "id") {
+    return `page.locator('#${CSS.escape(selector.value)}')`;
+  }
+  if (selector.kind === "name") {
+    return `page.locator('[name="${CSS.escape(selector.value)}"]')`;
+  }
+  if (selector.kind === "aria") {
+    return `page.getByLabel('${escapeForCode(selector.value)}')`;
+  }
+  if (selector.kind === "data") {
+    if (selector.attr === "placeholder") {
+      return `page.getByPlaceholder('${escapeForCode(selector.value)}')`;
+    }
+    if (selector.attr === "data-testid") {
+      return `page.getByTestId('${escapeForCode(selector.value)}')`;
+    }
+    return `page.locator('[${selector.attr}="${CSS.escape(selector.value)}"]')`;
+  }
+  return `page.locator('${escapeForCode(selector.value)}')`;
 }
 
 export function exportToPuppeteer(
