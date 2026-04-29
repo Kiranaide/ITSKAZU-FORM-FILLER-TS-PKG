@@ -1,6 +1,7 @@
+import { createMaskPlugin } from "../plugins/mask.plugin";
 import { getEventTargetElement, isFormField, matchesAnySelector } from "../utils/dom";
 import { nanoid } from "../utils/nanoid";
-import { createDefaultPIIConfig, PIIDetector } from "./pii-detector";
+import { createDefaultPIIConfig, MASK_PLACEHOLDER, PIIDetector } from "./pii-detector";
 import { FORMSCRIPT_VERSION, type FormScript, type FormScriptStep } from "./schema";
 import { extractSelectors, toFormSelectorStrategy } from "./selector";
 import type { RecordedAction, RecordedScript, RecorderOptions } from "./types";
@@ -88,7 +89,11 @@ export class Recorder {
   private state: RecorderState = { isRecording: false, stepCount: 0 };
 
   constructor(options: RecorderOptions = {}) {
-    this.options = options;
+    const hooks = { ...(options.hooks ?? {}) };
+    if (options.maskSensitiveInputs !== false) {
+      createMaskPlugin().install(hooks);
+    }
+    this.options = { ...options, hooks };
     this.piiDetector = new PIIDetector(
       options.maskSensitiveInputs === false
         ? { enabled: false, selectors: [], fields: [] }
@@ -254,10 +259,14 @@ export class Recorder {
       isMasked,
     );
 
-    if (this.shouldCoalesceInput(type, selector, value, baseTimestamp)) {
-      this.mergeLastInputAction(value, baseTimestamp, delay);
+    const coalesceTargetIndex = this.getCoalesceInputActionIndex(type, selector, value, baseTimestamp);
+    if (coalesceTargetIndex !== null) {
+      this.mergeInputActionAt(coalesceTargetIndex, value, baseTimestamp, delay);
       if (step && step.type === "input") {
-        this.mergeLastInputStep(step.value, step.timestamp, step.masked);
+        const stepIndex = this.getLastInputStepIndex();
+        if (stepIndex !== null) {
+          this.mergeInputStepAt(stepIndex, step.value, step.timestamp, step.masked);
+        }
       }
       return;
     }
@@ -277,50 +286,92 @@ export class Recorder {
     this.steps.push(mapped);
   }
 
-  private shouldCoalesceInput(
+  private getCoalesceInputActionIndex(
     type: RecordedAction["type"],
     selector: RecordedAction["selector"],
     value: string | boolean | string[] | undefined,
     timestamp: number,
-  ): boolean {
+  ): number | null {
     if ((type !== "input" && type !== "change") || typeof value !== "string") {
-      return false;
+      return null;
     }
-    const last = this.actions.at(-1);
-    if (!last || (last.type !== "input" && last.type !== "change")) {
-      return false;
+    const candidateIndex = this.getLastInputLikeActionIndex();
+    if (candidateIndex === null) {
+      return null;
     }
-    const lastPrimary = last.selector.strategies[0]?.value;
+    const candidate = this.actions[candidateIndex];
+    if (!candidate) {
+      return null;
+    }
+    const lastPrimary = candidate.selector.strategies[0]?.value;
     const currentPrimary = selector.strategies[0]?.value;
     if (!lastPrimary || !currentPrimary || lastPrimary !== currentPrimary) {
-      return false;
+      return null;
     }
-    return timestamp - last.timestamp <= 1500;
+    return timestamp - candidate.timestamp <= 1500 ? candidateIndex : null;
   }
 
-  private mergeLastInputAction(
+  private getLastInputLikeActionIndex(): number | null {
+    const last = this.actions.at(-1);
+    if (!last) {
+      return null;
+    }
+    if (last.type === "input" || last.type === "change") {
+      return this.actions.length - 1;
+    }
+    // Blur-by-Tab often produces keyboard immediately before change.
+    if (last.type === "keyboard") {
+      const previousIndex = this.actions.length - 2;
+      const previous = this.actions[previousIndex];
+      if (previous && (previous.type === "input" || previous.type === "change")) {
+        return previousIndex;
+      }
+    }
+    return null;
+  }
+
+  private mergeInputActionAt(
+    index: number,
     value: string | boolean | string[] | undefined,
     timestamp: number,
     delay: number,
   ): void {
-    const last = this.actions.at(-1);
-    if (!last) {
+    const action = this.actions[index];
+    if (!action) {
       return;
     }
-    last.type = "input";
-    last.value = value;
-    last.delay += this.options.captureDelay === false ? 0 : delay;
-    last.timestamp = timestamp;
+    action.type = "input";
+    action.value = value;
+    action.delay += this.options.captureDelay === false ? 0 : delay;
+    action.timestamp = timestamp;
   }
 
-  private mergeLastInputStep(value: string, timestamp: number, masked: boolean): void {
+  private getLastInputStepIndex(): number | null {
     const lastStep = this.steps.at(-1);
-    if (!lastStep || lastStep.type !== "input") {
+    if (!lastStep) {
+      return null;
+    }
+    if (lastStep.type === "input") {
+      return this.steps.length - 1;
+    }
+    if (lastStep.type === "keyboard") {
+      const previousIndex = this.steps.length - 2;
+      const previous = this.steps[previousIndex];
+      if (previous && previous.type === "input") {
+        return previousIndex;
+      }
+    }
+    return null;
+  }
+
+  private mergeInputStepAt(index: number, value: string, timestamp: number, masked: boolean): void {
+    const step = this.steps[index];
+    if (!step || step.type !== "input") {
       return;
     }
-    lastStep.value = value;
-    lastStep.timestamp = timestamp;
-    lastStep.masked = masked;
+    step.value = value;
+    step.timestamp = timestamp;
+    step.masked = masked;
   }
 
   private shouldIgnore(el: Element): boolean {
@@ -344,7 +395,7 @@ export class Recorder {
       return;
     }
 
-    const value = this.isMasked(el) ? "[masked]" : el.value;
+    const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
     this.capture("input", el, value);
   }
 
@@ -371,7 +422,7 @@ export class Recorder {
         return;
       }
 
-      const value = this.isMasked(el) ? "[masked]" : el.value;
+      const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
       this.capture("change", el, value);
     }
   }
@@ -432,7 +483,7 @@ export class Recorder {
     const el = getEventTargetElement(event);
     if (el instanceof HTMLFormElement) {
       const action = el.action || location.href;
-      if (action && action !== location.origin + "/") {
+      if (action && action !== `${location.origin}/`) {
         this.captureNavigation(action, "form");
       }
       this.capture("submit", el);

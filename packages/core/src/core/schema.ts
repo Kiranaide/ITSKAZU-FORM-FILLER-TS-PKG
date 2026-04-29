@@ -20,11 +20,13 @@ export type AssertionType =
   | "contains";
 
 export type AssertionOperator = "equals" | "contains" | "matches" | "gt" | "gte" | "lt" | "lte";
+export type AssertionProperty = "visible" | "value" | "text" | "checked";
 
 export type AssertStep = {
   type: "assert";
   selector?: SelectorStrategy;
   assertion: AssertionType;
+  property?: AssertionProperty;
   expected?: string | number;
   operator?: AssertionOperator;
   timestamp: number;
@@ -79,8 +81,11 @@ export interface StepTiming {
 export interface ReplayPerformanceResult {
   scriptId: string;
   scriptName: string;
+  totalMs: number;
   totalDurationMs: number;
+  timings: StepTiming[];
   stepTimings: StepTiming[];
+  slowSteps: StepTiming[];
   startTime: number;
   endTime: number;
   stepsPerSecond: number;

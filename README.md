@@ -3,6 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/kazu-fira)](https://www.npmjs.com/package/kazu-fira)
 [![CI](https://github.com/Kiranaide/Kazu-Fira/actions/workflows/release.yml/badge.svg)](https://github.com/Kiranaide/Kazu-Fira/actions)
 [![MIT license](https://img.shields.io/npm/l/kazu-fira)](LICENSE)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/kazu-fira)](https://bundlephobia.com/package/kazu-fira)
 
 Framework-agnostic form recorder/replayer for browser apps.
 
@@ -13,8 +14,10 @@ Testing forms is hard. Most solutions either require expensive enterprise tools,
 ## Use cases
 
 - **QA automation** — replay recorded flows to verify form behavior
+- **Regression testing** — re-run critical form journeys on every release
 - **Accessibility auditing** — replay scripts to test a11y tooling
 - **Integration test helpers** — generate test data from real user flows
+- **Form UX research** — compare real user flows across UI iterations
 
 ## Workspaces
 
@@ -51,7 +54,9 @@ Published from `packages/core` as `kazu-fira`.
 - `Recorder`
 - `Replayer`
 - `serializeScript`, `deserializeScript`
-- `migrateScript`
+- `validateScript`
+- `createAssertStep`, `AssertionError`
+- `exportToPlaywright` via `kazu-fira/adapters`
 - `applyPlugins`
 - schema and type exports
 

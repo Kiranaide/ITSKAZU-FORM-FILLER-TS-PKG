@@ -8,7 +8,7 @@ dist-ext
 *.tgz
 
 # code coverage
-coverage
+coverage/
 *.lcov
 
 # logs
@@ -35,8 +35,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 # Test Environment
-test-results
-playwright-report
+test-results/
+playwright-report/
 
 # workspace build/deps artifacts
 apps/ext/node_modules

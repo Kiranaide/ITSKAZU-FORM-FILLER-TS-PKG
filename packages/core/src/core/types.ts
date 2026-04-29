@@ -67,6 +67,7 @@ export interface ReplayOptions {
   expectedOrigin?: string;
   allowCrossOriginReplay?: boolean;
   speedMultiplier?: number;
+  slowThreshold?: number;
   onBeforeAction?: (action: FormScriptStep) => boolean | Promise<boolean>;
   onAfterAction?: (action: FormScriptStep, el: Element | null) => void;
   onError?: (action: FormScriptStep, error: Error) => "skip" | "abort";

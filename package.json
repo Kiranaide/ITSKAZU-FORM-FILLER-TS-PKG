@@ -42,7 +42,8 @@
     "release:version": "bunx changeset version && bun run release:sync-versions",
     "release:sync-versions": "bun run ./scripts/sync-versions.mjs",
     "release:publish": "bunx changeset publish",
-    "release": "bun run ./scripts/release.mjs"
+    "release": "bun run ./scripts/release.mjs",
+    "test:tree-shake": "bun run ./scripts/tree-shake-smoke.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",

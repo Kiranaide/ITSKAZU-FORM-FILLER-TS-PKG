@@ -1,5 +1,6 @@
 import { sleep } from "../utils/timing";
 import type {
+  AssertionProperty,
   AssertStep,
   FormScript,
   FormScriptStep,
@@ -11,7 +12,22 @@ import { normalizeScriptInput as normalizeReplayScriptInput } from "./script-nor
 import { resolveByFormSelectorStrategy, selectorStrategyToQuery } from "./selector";
 import type { ReplayOptions } from "./types";
 
-export type ReplayerState = "idle" | "playing" | "paused" | "stopped";
+export type ReplayerState = "idle" | "playing" | "paused" | "stopped" | "done";
+type ReplayerEventName = "step" | "pause" | "resume" | "done" | "breakpoint";
+type ReplayerEventPayload =
+  | { name: "step"; step: FormScriptStep; index: number }
+  | { name: "pause"; index: number }
+  | { name: "resume"; index: number }
+  | { name: "done"; status: "success" | "error" }
+  | { name: "breakpoint"; index: number; step: FormScriptStep };
+type ReplayerListener = (payload: ReplayerEventPayload) => void;
+
+export class AssertionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AssertionError";
+  }
+}
 
 export class Replayer {
   private options: ReplayOptions;
@@ -22,6 +38,7 @@ export class Replayer {
   private pausedPromiseResolve: ((value: void) => void) | null = null;
   private timings: StepTiming[] = [];
   private _speedMultiplier: number;
+  private listeners: Map<ReplayerEventName, Set<ReplayerListener>> = new Map();
 
   constructor(options: ReplayOptions) {
     this.options = options;
@@ -40,11 +57,14 @@ export class Replayer {
     return this.currentState;
   }
 
-  async play(): Promise<ReplayPerformanceResult> {
+  async play(params?: { speed?: number }): Promise<ReplayPerformanceResult> {
     const startTime = performance.now();
     this.currentState = "playing";
     this.aborted = false;
     this.timings = [];
+    if (params?.speed) {
+      this.speedMultiplier = params.speed;
+    }
 
     const script = normalizeReplayScriptInput(this.options.script);
     this.options.hooks?.onReplayStart?.(script);
@@ -77,6 +97,7 @@ export class Replayer {
         if (this.aborted) break;
 
         if (this.breakpoints.has(index) && (this.currentState as string) === "playing") {
+          this.emit("breakpoint", { name: "breakpoint", index, step });
           await this.pause();
           continue;
         }
@@ -86,30 +107,30 @@ export class Replayer {
             await sleep(step.ms / speedMultiplier);
           }
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
         const shouldProceed = (await this.options.onBeforeAction?.(step)) ?? true;
         if (!shouldProceed) {
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
         if (step.type === "navigate") {
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
         if (step.type === "assert") {
           const assertSuccess = await this.executeAssertion(step);
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           if (!assertSuccess) {
             status = "error";
-            const err = new Error(
-              `Assertion failed: ${step.assertion}${
-                step.expected ? ` expected "${step.expected}"` : ""
-              }`,
-            );
+            const err = new AssertionError(buildAssertionErrorMessage(step, index));
             this.options.hooks?.onError?.(err, "replay");
             const resolution = await this.onErrorHandler(step, err);
             if (resolution === "abort") {
@@ -134,6 +155,7 @@ export class Replayer {
             this.currentState = "stopped";
           }
           this.recordTiming(index, step, stepStart);
+          this.emit("step", { name: "step", step, index });
           continue;
         }
 
@@ -154,22 +176,33 @@ export class Replayer {
         }
 
         this.recordTiming(index, step, stepStart);
+        this.emit("step", { name: "step", step, index });
         this.options.onAfterAction?.(step, el);
         this.options.hooks?.onReplayStep?.(step, index);
       }
     } finally {
+      if (this.currentState !== "stopped") {
+        this.currentState = "done";
+      }
       this.options.hooks?.onReplayEnd?.(script, status);
+      this.emit("done", { name: "done", status });
     }
 
     const endTime = performance.now();
+    const totalDurationMs = endTime - startTime;
+    const slowThreshold = this.options.slowThreshold ?? 500;
+    const slowSteps = this.timings.filter((timing) => timing.durationMs > slowThreshold);
     return {
       scriptId: script.id,
       scriptName: script.name,
-      totalDurationMs: endTime - startTime,
+      totalMs: totalDurationMs,
+      totalDurationMs,
+      timings: this.timings,
       stepTimings: this.timings,
+      slowSteps,
       startTime,
       endTime,
-      stepsPerSecond: this.timings.length / ((endTime - startTime) / 1000),
+      stepsPerSecond: this.timings.length / (totalDurationMs / 1000),
     };
   }
 
@@ -252,6 +285,7 @@ export class Replayer {
   async pause(): Promise<void> {
     if (this.currentState !== "playing") return;
     this.currentState = "paused";
+    this.emit("pause", { name: "pause", index: this.currentStepIndex });
     return new Promise((resolve) => {
       this.pausedPromiseResolve = resolve;
     });
@@ -260,6 +294,7 @@ export class Replayer {
   resume(): void {
     if (this.currentState !== "paused") return;
     this.currentState = "playing";
+    this.emit("resume", { name: "resume", index: this.currentStepIndex });
     this.pausedPromiseResolve?.();
   }
 
@@ -315,9 +350,28 @@ export class Replayer {
     return this.currentStepIndex;
   }
 
+  on(eventName: ReplayerEventName, listener: ReplayerListener): () => void {
+    const listeners = this.listeners.get(eventName) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(eventName, listeners);
+    return () => {
+      listeners.delete(listener);
+    };
+  }
+
+  off(eventName: ReplayerEventName, listener: ReplayerListener): void {
+    this.listeners.get(eventName)?.delete(listener);
+  }
+
   private async onErrorHandler(step: FormScriptStep, error: Error): Promise<"skip" | "abort"> {
     if (!this.options.onError) return "skip";
     return this.options.onError(step, error);
+  }
+
+  private emit(eventName: ReplayerEventName, payload: ReplayerEventPayload): void {
+    this.listeners.get(eventName)?.forEach((listener) => {
+      listener(payload);
+    });
   }
 
   private async resolveElementWithRetry(selector: SelectorStrategy): Promise<Element | null> {
@@ -335,6 +389,36 @@ export class Replayer {
 
     return resolveByFormSelectorStrategy(selector);
   }
+}
+
+export function createAssertStep(
+  selector: SelectorStrategy,
+  property: AssertionProperty,
+  expected?: string | boolean,
+): AssertStep {
+  const assertion =
+    property === "checked"
+      ? expected
+        ? "checked"
+        : "unchecked"
+      : property === "text"
+        ? "text"
+        : property === "value"
+          ? "value"
+          : expected
+            ? "visible"
+            : "hidden";
+  const step: AssertStep = {
+    type: "assert",
+    selector,
+    property,
+    assertion,
+    timestamp: Date.now(),
+  };
+  if (expected !== undefined) {
+    step.expected = typeof expected === "boolean" ? String(expected) : expected;
+  }
+  return step;
 }
 
 async function executeStep(step: FormScriptStep, el: Element): Promise<void> {
@@ -488,6 +572,12 @@ function describeReactSelectLookup(selector: SelectorStrategy): string {
   }
   const fallbackMatches = document.querySelectorAll(`[id$="${suffix}"]`).length;
   return `fallback="[id$='${suffix}']" matches=${fallbackMatches}`;
+}
+
+function buildAssertionErrorMessage(step: AssertStep, index: number): string {
+  const target = step.selector ? selectorStrategyToQuery(step.selector) : "<unknown-selector>";
+  const expectedText = step.expected !== undefined ? ` expected=${String(step.expected)}` : "";
+  return `Assert failed: ${target} ${step.assertion}${expectedText} at step ${index}`;
 }
 
 function getReactSelectStableSuffix(id: string): string | null {

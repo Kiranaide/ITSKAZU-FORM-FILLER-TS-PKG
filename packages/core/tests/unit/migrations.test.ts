@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { migrateScript } from "../../src/core/migrations";
+import { describe, expect, it } from "vitest";
+import { validateScript } from "../../src/core/migrations";
 
-describe("migrateScript", () => {
+describe("validateScript", () => {
   it("should accept valid v2 scripts", () => {
     const v2Script = {
       version: 2,
@@ -12,7 +12,7 @@ describe("migrateScript", () => {
       origin: "https://example.com",
       steps: [],
     };
-    const result = migrateScript(v2Script);
+    const result = validateScript(v2Script);
     expect(result.version).toBe(2);
     expect(result.id).toBe("test-1");
     expect(result.name).toBe("Test");
@@ -21,11 +21,11 @@ describe("migrateScript", () => {
 
   it("should throw on invalid versions", () => {
     const invalid = { version: 99, name: "Invalid" };
-    expect(() => migrateScript(invalid)).toThrow("Unsupported script version");
+    expect(() => validateScript(invalid)).toThrow("Unsupported script version");
   });
 
   it("should throw when no version provided", () => {
     const noVersion = { name: "No version" };
-    expect(() => migrateScript(noVersion)).toThrow("Unsupported script");
+    expect(() => validateScript(noVersion)).toThrow("Unsupported script");
   });
 });

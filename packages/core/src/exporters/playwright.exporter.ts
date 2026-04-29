@@ -39,7 +39,13 @@ function generateStepCode(step: FormScriptStep, indent: number): string[] {
     const selectorStr = selectorToString(step.selector);
     switch (step.type) {
       case "input": {
-        const value = step.masked ? '"<masked>"' : `'${escapeForCode(step.value)}'`;
+        if (step.masked || step.value === "[MASKED]") {
+          const envName = toEnvVarName(selectorStr);
+          lines.push(`${pad}// TODO: set env var ${envName}`);
+          lines.push(`${pad}await page.fill('${selectorStr}', process.env.${envName} ?? '');`);
+          break;
+        }
+        const value = `'${escapeForCode(step.value)}'`;
         lines.push(`${pad}await page.fill('${selectorStr}', ${value});`);
         break;
       }
@@ -184,6 +190,14 @@ function sanitizeTestName(name: string): string {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function toEnvVarName(selector: string): string {
+  const normalized = selector
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+  return `FIELD_${normalized || "VALUE"}`;
 }
 
 export { exportToPlaywright as default };

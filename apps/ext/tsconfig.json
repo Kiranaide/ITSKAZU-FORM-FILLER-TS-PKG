@@ -5,7 +5,8 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "kazu-fira": ["../../packages/core/dist/index.d.ts"]
+      "kazu-fira": ["../../packages/core/dist/index.d.ts"],
+      "kazu-fira/adapters": ["../../packages/core/dist/adapters/index.d.ts"]
     },
     "types": ["vite/client", "node", "chrome"],
     "noEmit": true

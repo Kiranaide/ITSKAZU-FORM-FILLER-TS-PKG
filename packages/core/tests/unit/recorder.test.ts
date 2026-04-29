@@ -17,7 +17,10 @@ describe("recorder", () => {
     form.append(input, checkbox);
     document.body.append(form);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({
+      root: document.body,
+      maskSensitiveInputs: false,
+    });
     recorder.start();
 
     input.value = "user@example.com";
@@ -65,7 +68,7 @@ describe("recorder", () => {
 
     expect(actions).toHaveLength(1);
     expect(actions[0]?.type).toBe("input");
-    expect(actions[0]?.value).toBe("[masked]");
+    expect(actions[0]?.value).toBe("[MASKED]");
   });
 
   it("captures password values when sensitive masking is disabled", () => {
@@ -99,7 +102,8 @@ describe("recorder", () => {
 
     const select = document.createElement("select");
     select.name = "country";
-    select.innerHTML = '<option value="id">ID</option><option value="us">US</option>';
+    select.innerHTML =
+      '<option value="id">ID</option><option value="us">US</option>';
 
     const radioA = document.createElement("input");
     radioA.type = "radio";
@@ -153,12 +157,19 @@ describe("recorder", () => {
     input.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
     input.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
     button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
 
     const script = recorder.stop();
     const actions = script.actions ?? [];
 
-    expect(actions.map((action) => action.type)).toEqual(["focus", "blur", "click", "submit"]);
+    expect(actions.map((action) => action.type)).toEqual([
+      "focus",
+      "blur",
+      "click",
+      "submit",
+    ]);
     expect(actions.every((action) => action.delay === 0)).toBe(true);
   });
 
@@ -172,8 +183,12 @@ describe("recorder", () => {
     const recorder = new Recorder({ root: document.body });
     recorder.start();
 
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
 
     const script = recorder.stop();
     const actions = script.actions ?? [];
@@ -226,7 +241,10 @@ describe("recorder", () => {
     if (!step || step.type !== "click") {
       throw new Error("Expected click step");
     }
-    expect(step.selector).toEqual({ kind: "id", value: "react-select-2-input" });
+    expect(step.selector).toEqual({
+      kind: "id",
+      value: "react-select-2-input",
+    });
   });
 
   it("captures multi-select as string array", () => {
@@ -302,6 +320,37 @@ describe("recorder", () => {
     expect(script.steps?.[0]?.type).toBe("input");
     if (script.steps?.[0]?.type === "input") {
       expect(script.steps[0].value).toBe("500");
+    }
+  });
+
+  it("coalesces input and blur-triggered change across Tab keypress", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.name = "userName";
+    document.body.append(input);
+
+    const recorder = new Recorder({ root: document.body });
+    recorder.start();
+
+    input.value = "testing_user";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const script = recorder.stop();
+
+    expect(script.actions?.map((action) => action.type)).toEqual([
+      "input",
+      "keyboard",
+    ]);
+    expect(script.actions?.[0]?.value).toBe("testing_user");
+    expect(script.steps?.map((step) => step.type)).toEqual([
+      "input",
+      "keyboard",
+    ]);
+    if (script.steps?.[0]?.type === "input") {
+      expect(script.steps[0].value).toBe("testing_user");
     }
   });
 });
