@@ -435,6 +435,33 @@ describe("recorder", () => {
     }
   });
 
+  it("collapses react-datepicker day when aria-label doesn't start with Choose", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "react-datepicker-ignore-onclickoutside";
+
+    const day = document.createElement("div");
+    day.setAttribute("aria-label", "Thursday, April 30th, 2026");
+
+    document.body.append(input, day);
+
+    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    day.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const script = recorder.stop();
+    const dateStep = script.steps?.find((step) => step.type === "input");
+    expect(dateStep?.type).toBe("input");
+    if (dateStep?.type === "input") {
+      expect(dateStep.metadata?.controlType).toBe("datepicker");
+      expect(dateStep.metadata?.commitReason).toBe("calendar-day");
+      expect(dateStep.metadata?.normalizedValue).toBe("2026-04-30");
+      expect(dateStep.value).toBe("04/30/2026");
+    }
+  });
+
   it("captures datepicker input commit without calendar day click", () => {
     document.body.innerHTML = "";
     const input = document.createElement("input");

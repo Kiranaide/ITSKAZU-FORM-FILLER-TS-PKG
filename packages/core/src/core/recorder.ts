@@ -613,7 +613,7 @@ export class Recorder {
 
   private captureDatePickerDaySelection(target: Element): boolean {
     const ariaLabel = target.getAttribute("aria-label");
-    if (!ariaLabel || !ariaLabel.startsWith("Choose ")) {
+    if (!ariaLabel) {
       return false;
     }
     const dateInfo = parseReactDatepickerAriaLabel(ariaLabel);
@@ -685,6 +685,16 @@ export class Recorder {
         "textarea",
         "label",
         "[aria-label^='Choose ']",
+        // react-datepicker-like calendars often use aria-labels like:
+        // "Thursday, April 30th, 2026" or "Today, Wednesday, April 29th, 2026"
+        "[aria-label^='Today, ']",
+        "[aria-label^='Sunday, ']",
+        "[aria-label^='Monday, ']",
+        "[aria-label^='Tuesday, ']",
+        "[aria-label^='Wednesday, ']",
+        "[aria-label^='Thursday, ']",
+        "[aria-label^='Friday, ']",
+        "[aria-label^='Saturday, ']",
         "[role='button']",
         "[role='link']",
         "[role='option']",
@@ -878,7 +888,9 @@ function isReactDatePickerMonthOrYearSelect(el: HTMLSelectElement): boolean {
 function parseReactDatepickerAriaLabel(
   ariaLabel: string,
 ): { isoDate: string; displayValue: string } | null {
-  const parsed = ariaLabel.match(/,\s+([A-Za-z]+)\s+(\d+)(?:st|nd|rd|th),\s+(\d{4})$/);
+  const parsed = ariaLabel.match(
+    /^(?:Choose\s+)?(?:Today\s*,\s*)?(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\s*,\s+([A-Za-z]+)\s+(\d+)(?:st|nd|rd|th)\s*,\s+(\d{4})(?:\s*,\s*selected)?$/i,
+  );
   if (!parsed) {
     return null;
   }
