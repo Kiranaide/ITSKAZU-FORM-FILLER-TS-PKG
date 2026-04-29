@@ -118,8 +118,33 @@ const ensureReleaseChangesExist = () => {
   }
 };
 
+const ensureGithubCliAuthenticated = () => {
+  try {
+    run("gh auth status");
+  } catch {
+    fail(
+      "GitHub CLI is not authenticated. Run 'gh auth login' and retry the release.",
+    );
+  }
+};
+
+const createGithubRelease = (version) => {
+  const tag = `kazu-fira@${version}`;
+
+  try {
+    read(`gh release view "${tag}"`);
+    console.log(`GitHub release already exists for ${tag}. Skipping create.`);
+    return;
+  } catch {
+    // Continue and create the release when not found.
+  }
+
+  run(`gh release create "${tag}" --title "${tag}" --generate-notes`);
+};
+
 ensureCleanGitTree();
 ensureMainBranch();
+ensureGithubCliAuthenticated();
 const releaseType = parseReleaseType(process.argv);
 ensureNoPendingChangesetsForTypedRelease(releaseType);
 createChangesetForReleaseType(releaseType);
@@ -136,3 +161,4 @@ ensureReleaseChangesExist();
 run(`git commit -m "chore(release): v${version}"`);
 run("bun run release:publish");
 run("git push --follow-tags");
+createGithubRelease(version);
