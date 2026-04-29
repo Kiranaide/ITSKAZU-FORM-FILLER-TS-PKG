@@ -111,9 +111,17 @@ export class Recorder {
   private lastKeyboardEvent:
     | { selectorValue: string; key: string; timestamp: number }
     | undefined = undefined;
-  private lastReactSelectInput: Element | null = null;
+  private lastReactSelectInput: HTMLInputElement | null = null;
   private activeDatepickerInput: HTMLInputElement | null = null;
   private state: RecorderState = { isRecording: false, stepCount: 0 };
+
+  private debugLog(message: string, payload?: unknown): void {
+    if (payload === undefined) {
+      console.log(`[KazuFira][Recorder] ${message}`);
+      return;
+    }
+    console.log(`[KazuFira][Recorder] ${message}`, payload);
+  }
 
   constructor(options: RecorderOptions = {}) {
     const hooks = { ...(options.hooks ?? {}) };
@@ -143,6 +151,10 @@ export class Recorder {
     this.attachListeners(root);
     this.attachNavigationListeners();
     this.options.hooks?.onRecordStart?.();
+    this.debugLog("Recording started", {
+      root: this.options.root ? "custom-root" : "document.body",
+      maskSensitiveInputs: this.options.maskSensitiveInputs !== false,
+    });
 
     this.stopWatchingShadowRoots = this.options.observeShadowRoots?.((shadowRoot) => {
       this.attachListeners(shadowRoot);
@@ -169,6 +181,11 @@ export class Recorder {
       steps: this.steps,
     };
     this.options.hooks?.onRecordStop?.(script);
+    this.debugLog("Recording stopped", {
+      steps: this.steps.length,
+      actions: this.actions.length,
+      durationMs: Math.round(performance.now() - this.startTime),
+    });
     return {
       version: 2,
       id: script.id,
@@ -251,6 +268,11 @@ export class Recorder {
       timestamp: Math.round(performance.now() - this.startTime),
     };
     this.steps.push(step);
+    this.debugLog("Navigation captured", {
+      triggeredBy,
+      url,
+      timestamp: step.timestamp,
+    });
   }
 
   private capture(
@@ -311,6 +333,11 @@ export class Recorder {
 
     this.actions.push(action);
     this.options.onAction?.(action);
+    this.debugLog("Action captured", {
+      type: action.type,
+      timestamp: action.timestamp,
+      selector: action.selector.strategies[0]?.value,
+    });
 
     if (!step) {
       return;
@@ -322,6 +349,11 @@ export class Recorder {
     }
 
     this.steps.push(mapped);
+    this.debugLog("Step mapped", {
+      type: mapped.type,
+      timestamp: "timestamp" in mapped ? mapped.timestamp : undefined,
+      selector: "selector" in mapped ? mapped.selector?.value : undefined,
+    });
   }
 
   private getCoalesceInputActionIndex(
@@ -434,6 +466,17 @@ export class Recorder {
     }
 
     const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
+    if (isReactDatePickerInput(el)) {
+      this.activeDatepickerInput = el;
+      const fallback = value ? null : inferDatepickerValueFromOpenPicker();
+      this.capture(
+        "input",
+        el,
+        value || fallback?.displayValue || "",
+        buildDatepickerCommitMetadata("input", fallback?.isoDate),
+      );
+      return;
+    }
     this.capture("input", el, value);
   }
 
@@ -467,6 +510,19 @@ export class Recorder {
     }
 
     if (el instanceof HTMLInputElement) {
+      if (isReactDatePickerInputLike(el)) {
+        this.activeDatepickerInput = el;
+        const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
+        const fallback = value ? null : inferDatepickerValueFromOpenPicker();
+        this.capture(
+          "change",
+          el,
+          value || fallback?.displayValue || "",
+          buildDatepickerCommitMetadata("change", fallback?.isoDate),
+        );
+        return;
+      }
+
       if (el.type === "checkbox") {
         this.capture("checkbox", el, el.checked);
         return;
@@ -492,6 +548,9 @@ export class Recorder {
   private onBlur(event: FocusEvent): void {
     const el = getEventTargetElement(event);
     if (isFormField(el)) {
+      if (isReactSelectInput(el)) {
+        this.lastReactSelectInput = null;
+      }
       this.capture("blur", el);
     }
   }
@@ -564,6 +623,9 @@ export class Recorder {
     if (!input) {
       return false;
     }
+    if (!isOptionOwnedByReactSelectInput(input, target)) {
+      return false;
+    }
     const optionId = target.getAttribute("data-value") ?? target.getAttribute("data-id") ?? undefined;
     const optionLabel = target.textContent?.trim() ?? undefined;
     const metadata: StepMetadata = {
@@ -577,6 +639,7 @@ export class Recorder {
       metadata.optionLabel = optionLabel;
     }
     this.capture("select", input, optionId ?? optionLabel ?? "", metadata);
+    this.lastReactSelectInput = null;
     return true;
   }
 
@@ -729,8 +792,8 @@ function inferCommitReason(
   return type === "input" ? "input" : "unknown";
 }
 
-function isReactSelectInput(target: Element): boolean {
-  if (!(target instanceof HTMLElement)) {
+function isReactSelectInput(target: Element): target is HTMLInputElement {
+  if (!(target instanceof HTMLInputElement)) {
     return false;
   }
   return (
@@ -739,10 +802,98 @@ function isReactSelectInput(target: Element): boolean {
   );
 }
 
+function isOptionOwnedByReactSelectInput(input: HTMLInputElement, option: Element): boolean {
+  const controlsId = input.getAttribute("aria-controls");
+  if (controlsId) {
+    const controlledMenu = document.getElementById(controlsId);
+    if (controlledMenu?.contains(option)) {
+      return true;
+    }
+  }
+
+  const activeDescendant = input.getAttribute("aria-activedescendant");
+  if (activeDescendant && option.id === activeDescendant) {
+    return true;
+  }
+
+  if (
+    option.getAttribute("data-value") !== null ||
+    option.getAttribute("data-id") !== null
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildDatepickerCommitMetadata(
+  reason: "input" | "change" | "blur",
+  normalizedValue?: string,
+): StepMetadata {
+  const metadata: StepMetadata = {
+    controlType: "datepicker",
+    commitReason: reason,
+  };
+  if (normalizedValue) {
+    metadata.normalizedValue = normalizedValue;
+  }
+  return metadata;
+}
+
+function inferDatepickerValueFromOpenPicker(): { displayValue: string; isoDate: string } | null {
+  const poppers = Array.from(document.querySelectorAll(".react-datepicker-popper"));
+  const visiblePopper = poppers.find(
+    (candidate) => candidate instanceof HTMLElement && isVisible(candidate),
+  );
+  if (!(visiblePopper instanceof HTMLElement)) {
+    return null;
+  }
+
+  const monthSelect = visiblePopper.querySelector(".react-datepicker__month-select");
+  const yearSelect = visiblePopper.querySelector(".react-datepicker__year-select");
+  const activeDay = visiblePopper.querySelector(
+    ".react-datepicker__day--selected, .react-datepicker__day--keyboard-selected",
+  );
+  if (
+    !(monthSelect instanceof HTMLSelectElement) ||
+    !(yearSelect instanceof HTMLSelectElement) ||
+    !(activeDay instanceof HTMLElement)
+  ) {
+    return null;
+  }
+
+  const month = Number(monthSelect.value) + 1;
+  const year = Number(yearSelect.value);
+  const day = Number(activeDay.textContent?.trim() ?? "");
+  if (!Number.isFinite(month) || !Number.isFinite(year) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  const yyyy = String(year);
+  return {
+    displayValue: `${mm}/${dd}/${yyyy}`,
+    isoDate: `${yyyy}-${mm}-${dd}`,
+  };
+}
+
+function isVisible(el: HTMLElement): boolean {
+  const style = window.getComputedStyle(el);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
+
 function isReactDatePickerInput(target: Element): target is HTMLInputElement {
   if (!(target instanceof HTMLInputElement)) {
     return false;
   }
+  return (
+    target.classList.contains("react-datepicker-ignore-onclickoutside") ||
+    target.closest(".react-datepicker-wrapper") !== null
+  );
+}
+
+function isReactDatePickerInputLike(target: HTMLInputElement): boolean {
   return (
     target.classList.contains("react-datepicker-ignore-onclickoutside") ||
     target.closest(".react-datepicker-wrapper") !== null

@@ -248,7 +248,9 @@ export function resolveByFormSelectorStrategy(
 }
 
 function isDynamicId(id: string): boolean {
-  return /^(:r\d|react-aria|ember\d|\d|react-select-\d+-(placeholder|live-region|value))/.test(id);
+  return /^(:r\d|react-aria|ember\d|\d|react-select-\d+-(input|listbox|option-\d+|placeholder|live-region|value))/.test(
+    id,
+  );
 }
 
 function buildShortCSSSelector(el: Element): string {

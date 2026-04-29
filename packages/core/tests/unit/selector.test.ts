@@ -73,6 +73,17 @@ describe("selector", () => {
     expect(resolved).toBe(option);
   });
 
+  it("treats react-select combobox ids as dynamic", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "react-select-2-input";
+    input.setAttribute("role", "combobox");
+    document.body.append(input);
+
+    const selector = extractSelectors(input);
+    expect(selector.strategies.some((strategy) => strategy.type === "id")).toBe(false);
+  });
+
   it("resolves react-select options from menu classes by option index", () => {
     document.body.innerHTML = "";
     const menu = document.createElement("div");

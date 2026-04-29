@@ -70,6 +70,97 @@ describe("replayer", () => {
     expect(select.value).toBe("us");
   });
 
+  it("handles semantic react-select option selection", async () => {
+    document.body.innerHTML = "";
+
+    const control = document.createElement("div");
+    control.className = "css-react-select-control";
+    const input = document.createElement("input");
+    input.id = "react-select-1-input";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    control.append(input);
+
+    const menu = document.createElement("div");
+    menu.className = "css-react-select-menu";
+    const option = document.createElement("div");
+    option.setAttribute("role", "option");
+    option.setAttribute("data-value", "agency");
+    option.textContent = "Agency Banking";
+    option.addEventListener("click", () => {
+      input.value = "agency";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    menu.append(option);
+    document.body.append(control, menu);
+
+    const script = createV2Script([
+      {
+        type: "select",
+        selector: { kind: "id", value: "react-select-1-input" },
+        value: "agency",
+        timestamp: 0,
+        metadata: {
+          controlType: "react-select",
+          optionLabel: "Agency Banking",
+          optionId: "agency",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("agency");
+  });
+
+  it("waits for delayed react-select options before clicking", async () => {
+    document.body.innerHTML = "";
+
+    const control = document.createElement("div");
+    control.className = "css-react-select-control";
+    const input = document.createElement("input");
+    input.id = "react-select-1-input";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-controls", "react-select-1-listbox");
+    input.setAttribute("aria-expanded", "false");
+    const listbox = document.createElement("div");
+    listbox.id = "react-select-1-listbox";
+    listbox.setAttribute("role", "listbox");
+    control.append(input);
+    document.body.append(control, listbox);
+
+    input.addEventListener("click", () => {
+      input.setAttribute("aria-expanded", "true");
+      setTimeout(() => {
+        const option = document.createElement("div");
+        option.setAttribute("role", "option");
+        option.setAttribute("data-value", "agency");
+        option.textContent = "Agency Banking";
+        option.addEventListener("click", () => {
+          input.value = "agency";
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        listbox.append(option);
+      }, 120);
+    });
+
+    const script = createV2Script([
+      {
+        type: "select",
+        selector: { kind: "id", value: "react-select-1-input" },
+        value: "agency",
+        timestamp: 0,
+        metadata: {
+          controlType: "react-select",
+          optionLabel: "Agency Banking",
+          optionId: "agency",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("agency");
+  });
+
   it("handles multi-select values", async () => {
     document.body.innerHTML = "";
 
@@ -114,6 +205,180 @@ describe("replayer", () => {
     await new Replayer({ script }).play();
 
     expect(clicked).toBe(true);
+  });
+
+  it("handles semantic datepicker day selection", async () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "dob";
+    input.readOnly = true;
+    input.className = "react-datepicker-ignore-onclickoutside";
+    const day = document.createElement("div");
+    day.setAttribute("aria-label", "Choose Wednesday, March 9th, 1966");
+    day.addEventListener("click", () => {
+      input.value = "03/09/1966";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    document.body.append(input, day);
+
+    const script = createV2Script([
+      {
+        type: "input",
+        selector: { kind: "id", value: "dob" },
+        value: "03/09/1966",
+        masked: false,
+        timestamp: 0,
+        metadata: {
+          controlType: "datepicker",
+          optionLabel: "Choose Wednesday, March 9th, 1966",
+          commitReason: "calendar-day",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("03/09/1966");
+  });
+
+  it("waits for delayed datepicker day before clicking", async () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "dob";
+    input.readOnly = true;
+    document.body.append(input);
+
+    input.addEventListener("click", () => {
+      setTimeout(() => {
+        const day = document.createElement("div");
+        day.setAttribute("aria-label", "Choose Wednesday, March 9th, 1966");
+        day.addEventListener("click", () => {
+          input.value = "03/09/1966";
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        document.body.append(day);
+      }, 120);
+    });
+
+    const script = createV2Script([
+      {
+        type: "input",
+        selector: { kind: "id", value: "dob" },
+        value: "03/09/1966",
+        masked: false,
+        timestamp: 0,
+        metadata: {
+          controlType: "datepicker",
+          optionLabel: "Choose Wednesday, March 9th, 1966",
+          commitReason: "calendar-day",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("03/09/1966");
+  });
+
+  it("sets datepicker readonly input when metadata has no optionLabel", async () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "dob";
+    input.readOnly = true;
+    input.className = "react-datepicker-ignore-onclickoutside";
+    document.body.append(input);
+
+    const script = createV2Script([
+      {
+        type: "input",
+        selector: { kind: "id", value: "dob" },
+        value: "03/09/1966",
+        masked: false,
+        timestamp: 0,
+        metadata: {
+          controlType: "datepicker",
+          commitReason: "change",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("03/09/1966");
+  });
+
+  it("uses normalizedValue when datepicker step value is empty", async () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "dob";
+    input.readOnly = true;
+    input.className = "react-datepicker-ignore-onclickoutside";
+    document.body.append(input);
+
+    const script = createV2Script([
+      {
+        type: "input",
+        selector: { kind: "id", value: "dob" },
+        value: "",
+        masked: false,
+        timestamp: 0,
+        metadata: {
+          controlType: "datepicker",
+          commitReason: "change",
+          normalizedValue: "1966-03-09",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("03/09/1966");
+  });
+
+  it("falls back to normalized date when day aria label is unavailable", async () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.id = "dob";
+    input.readOnly = true;
+    input.className = "react-datepicker-ignore-onclickoutside";
+    document.body.append(input);
+
+    input.addEventListener("click", () => {
+      const popper = document.createElement("div");
+      popper.className = "react-datepicker-popper";
+      const month = document.createElement("select");
+      month.className = "react-datepicker__month-select";
+      month.innerHTML = '<option value="2">March</option>';
+      month.value = "2";
+      const year = document.createElement("select");
+      year.className = "react-datepicker__year-select";
+      year.innerHTML = '<option value="1966">1966</option>';
+      year.value = "1966";
+      const day = document.createElement("div");
+      day.className = "react-datepicker__day react-datepicker__day--009";
+      day.textContent = "9";
+      day.addEventListener("click", () => {
+        input.value = "03/09/1966";
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      popper.append(month, year, day);
+      document.body.append(popper);
+    });
+
+    const script = createV2Script([
+      {
+        type: "input",
+        selector: { kind: "id", value: "dob" },
+        value: "",
+        masked: false,
+        timestamp: 0,
+        metadata: {
+          controlType: "datepicker",
+          optionLabel: "Choose Wednesday, March 9th, 1966",
+          commitReason: "calendar-day",
+          normalizedValue: "1966-03-09",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("03/09/1966");
   });
 
   it("handles keyboard events", async () => {

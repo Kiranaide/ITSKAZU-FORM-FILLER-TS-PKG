@@ -31,6 +31,7 @@
   "scripts": {
     "dev:ext": "bun run --filter @itskazu/ext dev",
     "build:ext": "bun run --filter @itskazu/ext build:ext",
+    "build:core": "bun run --filter kazu-fira build",
     "export:ext": "bun run --filter @itskazu/ext export:ext",
     "zip:ext": "bun run --filter @itskazu/ext zip:ext",
     "build": "bun run --filter kazu-fira build && bun run --filter @itskazu/ext build",
