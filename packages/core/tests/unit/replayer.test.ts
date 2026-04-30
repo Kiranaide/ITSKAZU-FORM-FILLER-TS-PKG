@@ -35,14 +35,12 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "email" },
         value: "user@example.com",
-        masked: false,
         timestamp: 0,
       },
       {
         type: "input",
         selector: { kind: "id", value: "tos" },
         value: "true",
-        masked: false,
         timestamp: 1,
       },
     ]);
@@ -70,7 +68,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "name", value: "loanDetails.effectiveMoratoriumRate" },
         value: "5",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "text",
@@ -378,7 +375,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "03/09/1966",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -416,7 +412,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "03/09/1966",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -443,7 +438,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "03/09/1966",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -469,7 +463,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -518,7 +511,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -545,7 +537,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "search" },
         value: "test query",
-        masked: false,
         timestamp: 0,
       },
       { type: "keyboard", selector: { kind: "id", value: "search" }, key: "Enter", timestamp: 1 },
@@ -604,7 +595,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "name" },
         value: "skipped",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -632,7 +622,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "field" },
         value: "test",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -657,7 +646,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "not-found" },
         value: "test",
-        masked: false,
         timestamp: 0,
       },
       { type: "click", selector: { kind: "id", value: "success" }, timestamp: 1 },
@@ -683,7 +671,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "input" },
         value: "test",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -714,7 +701,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "test" },
         value: "hello",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -737,7 +723,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "field" },
         value: "ok",
-        masked: false,
         timestamp: 0,
       },
     ]);

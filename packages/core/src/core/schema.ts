@@ -72,7 +72,6 @@ export type FormScriptStep =
       type: "input";
       selector: SelectorStrategy;
       value: string;
-      masked: boolean;
       timestamp: number;
       metadata?: StepMetadata;
     }

@@ -5,8 +5,7 @@ export const EXTENSION_EVENTS = {
   mountError: "kazu-fira.inject.mount-error",
 } as const;
 
-export type ExtensionEvent =
-  (typeof EXTENSION_EVENTS)[keyof typeof EXTENSION_EVENTS];
+export type ExtensionEvent = (typeof EXTENSION_EVENTS)[keyof typeof EXTENSION_EVENTS];
 
 export type ExtensionMessage =
   | {

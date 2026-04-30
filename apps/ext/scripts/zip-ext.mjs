@@ -1,8 +1,8 @@
-import { access, rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { constants } from "node:fs";
+import { access, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(currentDir, "..");

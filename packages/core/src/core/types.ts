@@ -56,8 +56,6 @@ export interface RecordedScript {
 
 export interface RecorderOptions {
   root?: HTMLElement | ShadowRoot;
-  mask?: string[];
-  maskSensitiveInputs?: boolean;
   ignore?: string[];
   captureDelay?: boolean;
   onAction?: (action: RecordedAction) => void;

@@ -1,4 +1,4 @@
-import { Recorder, Replayer, type FormScript, type ReplayPerformanceResult } from "kazu-fira";
+import { type FormScript, Recorder, Replayer, type ReplayPerformanceResult } from "kazu-fira";
 import { exportToPlaywright } from "kazu-fira/adapters";
 import { watchOpenShadowRoots } from "../adapters/shadow-dom.js";
 import {
@@ -16,7 +16,6 @@ type ReplayCallbacks = {
 };
 
 const TOOLBOX_ROOT_ID = "__toolbox-root";
-const ALLOW_SENSITIVE_CAPTURE_KEY = "kazu-fira:record:allow-sensitive";
 
 function createIgnoreSelector(): string[] {
   return [`#${TOOLBOX_ROOT_ID}`];
@@ -28,10 +27,8 @@ export function createToolboxCoreFacade() {
 
   return {
     startRecording() {
-      const allowSensitiveCapture = readAllowSensitiveCapture();
       recorder = new Recorder({
         ignore: createIgnoreSelector(),
-        maskSensitiveInputs: !allowSensitiveCapture,
         observeShadowRoots: (onShadowRoot) =>
           watchOpenShadowRoots((shadowRoot) => {
             const host = shadowRoot.host;
@@ -135,14 +132,6 @@ export function createToolboxCoreFacade() {
 }
 
 export type ToolboxCoreFacade = ReturnType<typeof createToolboxCoreFacade>;
-
-function readAllowSensitiveCapture(): boolean {
-  try {
-    return localStorage.getItem(ALLOW_SENSITIVE_CAPTURE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
 
 function parseOrigin(url: string): string | null {
   if (!url) {

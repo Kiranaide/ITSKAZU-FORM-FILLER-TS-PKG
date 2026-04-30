@@ -1,7 +1,5 @@
-import { createMaskPlugin } from "../plugins/mask.plugin";
 import { getEventTargetElement, isFormField, matchesAnySelector } from "../utils/dom";
 import { nanoid } from "../utils/nanoid";
-import { createDefaultPIIConfig, MASK_PLACEHOLDER, PIIDetector } from "./pii-detector";
 import {
   FORMSCRIPT_VERSION,
   type FormScript,
@@ -11,19 +9,11 @@ import {
 import { extractSelectors, toFormSelectorStrategy } from "./selector";
 import type { RecordedAction, RecordedScript, RecorderOptions } from "./types";
 
-const DEFAULT_MASK_SELECTORS = [
-  '[type="password"]',
-  '[autocomplete*="cc-number"]',
-  '[autocomplete*="cc-csc"]',
-  '[autocomplete*="cc-exp"]',
-];
-
 function mapRecordedTypeToStep(
   type: RecordedAction["type"],
   selector: ReturnType<typeof toFormSelectorStrategy>,
   value: string | boolean | string[] | undefined,
   timestamp: number,
-  masked: boolean,
   metadata?: StepMetadata,
 ): FormScriptStep | null {
   if (type === "input" || type === "change") {
@@ -31,7 +21,6 @@ function mapRecordedTypeToStep(
       type: "input",
       selector,
       value: typeof value === "string" ? value : "",
-      masked,
       timestamp,
     };
     if (metadata) {
@@ -107,7 +96,6 @@ export class Recorder {
   private options: RecorderOptions;
   private controllers: AbortController[] = [];
   private stopWatchingShadowRoots: (() => void) | undefined;
-  private piiDetector: PIIDetector;
   private lastKeyboardEvent:
     | { selectorValue: string; key: string; timestamp: number }
     | undefined = undefined;
@@ -116,16 +104,7 @@ export class Recorder {
   private state: RecorderState = { isRecording: false, stepCount: 0 };
 
   constructor(options: RecorderOptions = {}) {
-    const hooks = { ...(options.hooks ?? {}) };
-    if (options.maskSensitiveInputs !== false) {
-      createMaskPlugin().install(hooks);
-    }
-    this.options = { ...options, hooks };
-    this.piiDetector = new PIIDetector(
-      options.maskSensitiveInputs === false
-        ? { enabled: false, selectors: [], fields: [] }
-        : { selectors: options.mask ?? DEFAULT_MASK_SELECTORS },
-    );
+    this.options = { ...options, hooks: { ...(options.hooks ?? {}) } };
   }
 
   getState(): RecorderState {
@@ -269,7 +248,6 @@ export class Recorder {
 
     const selector = extractSelectors(el);
     const baseTimestamp = Math.round(now - this.startTime);
-    const isMasked = this.isMasked(el);
 
     const action = createRecordedAction(
       type,
@@ -287,7 +265,6 @@ export class Recorder {
       toFormSelectorStrategy(selector),
       value,
       baseTimestamp,
-      isMasked,
       metadata,
     );
 
@@ -297,7 +274,7 @@ export class Recorder {
       if (step && step.type === "input") {
         const stepIndex = this.getLastInputStepIndex();
         if (stepIndex !== null) {
-          this.mergeInputStepAt(stepIndex, step.value, step.timestamp, step.masked);
+          this.mergeInputStepAt(stepIndex, step.value, step.timestamp);
           const existing = this.steps[stepIndex];
           if (existing && existing.type === "input") {
             if (step.metadata) {
@@ -402,29 +379,17 @@ export class Recorder {
     return null;
   }
 
-  private mergeInputStepAt(index: number, value: string, timestamp: number, masked: boolean): void {
+  private mergeInputStepAt(index: number, value: string, timestamp: number): void {
     const step = this.steps[index];
     if (!step || step.type !== "input") {
       return;
     }
     step.value = value;
     step.timestamp = timestamp;
-    step.masked = masked;
   }
 
   private shouldIgnore(el: Element): boolean {
     return matchesAnySelector(el, this.options.ignore ?? []);
-  }
-
-  private isMasked(el: Element): boolean {
-    if (this.options.maskSensitiveInputs === false) return false;
-
-    if (this.piiDetector.shouldMask(el)) {
-      return true;
-    }
-
-    const selectors = this.options.mask ?? DEFAULT_MASK_SELECTORS;
-    return matchesAnySelector(el, selectors);
   }
 
   private onInput(event: InputEvent): void {
@@ -433,7 +398,11 @@ export class Recorder {
       return;
     }
 
-    const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
+    if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) {
+      return;
+    }
+
+    const value = el.value;
     if (isReactDatePickerInput(el)) {
       this.activeDatepickerInput = el;
       const fallback = value ? null : inferDatepickerValueFromOpenPicker();
@@ -480,7 +449,7 @@ export class Recorder {
     if (el instanceof HTMLInputElement) {
       if (isReactDatePickerInputLike(el)) {
         this.activeDatepickerInput = el;
-        const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
+        const value = el.value;
         const fallback = value ? null : inferDatepickerValueFromOpenPicker();
         this.capture(
           "change",
@@ -501,8 +470,7 @@ export class Recorder {
         return;
       }
 
-      const value = this.isMasked(el) ? MASK_PLACEHOLDER : el.value;
-      this.capture("change", el, value);
+      this.capture("change", el, el.value);
     }
   }
 

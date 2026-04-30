@@ -49,7 +49,6 @@ describe("shadow dom e2e", () => {
         type: "input",
         selector: { kind: "name", value: "shadowField" },
         value: "inside-shadow",
-        masked: false,
         timestamp: 0,
       },
     ]);

@@ -42,7 +42,6 @@ describe("validateScript", () => {
           type: "input",
           selector: { kind: "id", value: "amount" },
           value: "5,000",
-          masked: false,
           timestamp: 1,
           metadata: {
             controlType: "currency",

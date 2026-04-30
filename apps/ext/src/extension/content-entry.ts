@@ -1,10 +1,10 @@
 import { mountToolbox } from "../toolbox/mount-toolbox.js";
+import { EXTENSION_EVENTS } from "./messages.js";
 import {
   flushExtensionStorage,
   getExtensionStorage,
   preloadExtensionStorage,
 } from "./storage-adapter.js";
-import { EXTENSION_EVENTS } from "./messages.js";
 
 declare global {
   interface Window {
@@ -16,10 +16,7 @@ declare global {
 
 function sendRuntimeEvent(type: typeof EXTENSION_EVENTS.injected): void;
 function sendRuntimeEvent(type: typeof EXTENSION_EVENTS.alreadyMounted): void;
-function sendRuntimeEvent(
-  type: typeof EXTENSION_EVENTS.mountError,
-  message: string,
-): void;
+function sendRuntimeEvent(type: typeof EXTENSION_EVENTS.mountError, message: string): void;
 function sendRuntimeEvent(type: string, message?: string): void {
   if (typeof chrome === "undefined" || !chrome.runtime?.id) return;
   const payload =

@@ -146,8 +146,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.runtime.onMessage.addListener((message: unknown, sender) => {
   if (!sender.tab || typeof sender.tab.id !== "number") return;
-  if (!sender.tab.url || typeof message !== "object" || message === null)
-    return;
+  if (!sender.tab.url || typeof message !== "object" || message === null) return;
   const candidate = message as Partial<ExtensionMessage>;
   if (typeof candidate.type !== "string") return;
 

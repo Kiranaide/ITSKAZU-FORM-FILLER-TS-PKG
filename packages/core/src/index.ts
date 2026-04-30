@@ -1,8 +1,6 @@
-import type { KazuFiraHooks, KazuFiraPlugin, RecordedAction, RecordedScript } from "./core/types";
+import type { KazuFiraHooks, KazuFiraPlugin } from "./core/types";
 
 export { createEmptyScript, validateScript } from "./core/migrations";
-export type { PIIDetectionField, PIIMaskingConfig } from "./core/pii-detector";
-export { createDefaultPIIConfig, PIIDetector } from "./core/pii-detector";
 export { Recorder, type RecorderState } from "./core/recorder";
 export type { ReplayerState } from "./core/replayer";
 export { AssertionError, createAssertStep, normalizeScriptInput, Replayer } from "./core/replayer";
@@ -30,8 +28,6 @@ export type {
 } from "./core/types";
 export type { ExportOptions } from "./exporters";
 export { exportToPlaywright, exportToPuppeteer } from "./exporters";
-export { createMaskPlugin } from "./plugins/mask.plugin";
-
 export function applyPlugins(
   plugins: readonly KazuFiraPlugin[] = [],
   hooks: KazuFiraHooks = {},

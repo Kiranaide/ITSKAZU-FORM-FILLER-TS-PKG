@@ -18,7 +18,9 @@ describe("content-entry bootstrap", () => {
         id: "test",
         sendMessage,
       },
-      storage: { local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) } },
+      storage: {
+        local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) },
+      },
     });
 
     const mod = await import("./content-entry");

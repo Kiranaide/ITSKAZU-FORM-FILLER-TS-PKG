@@ -2,10 +2,7 @@ import { type FormScript, normalizeScriptInput } from "kazu-fira";
 
 const STORAGE_KEY = "kazu-fira:scripts";
 
-export function saveScript(
-  script: FormScript,
-  storage: Storage = localStorage,
-): void {
+export function saveScript(script: FormScript, storage: Storage = localStorage): void {
   const existing = loadAllScripts(storage);
   existing.push(normalizeScriptInput(script));
   storage.setItem(STORAGE_KEY, JSON.stringify(existing));

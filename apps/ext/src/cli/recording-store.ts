@@ -1,8 +1,4 @@
-import {
-  type FormScript,
-  type FormScriptStep,
-  normalizeScriptInput,
-} from "kazu-fira";
+import { type FormScript, type FormScriptStep, normalizeScriptInput } from "kazu-fira";
 import type { SessionStep, StoredSessionV2 } from "../session-types.js";
 
 export const SESSION_STORAGE_KEY_V2 = "kazu-fira:sessions:v2";
@@ -31,7 +27,8 @@ function selectorToCss(
   if (selector.kind === "id") return `#${CSS.escape(selector.value)}`;
   if (selector.kind === "name") return `[name="${CSS.escape(selector.value)}"]`;
   if (selector.kind === "aria") return `[aria-label="${CSS.escape(selector.value)}"]`;
-  if (selector.kind === "data") return `[data-${CSS.escape(selector.attr)}="${CSS.escape(selector.value)}"]`;
+  if (selector.kind === "data")
+    return `[data-${CSS.escape(selector.attr)}="${CSS.escape(selector.value)}"]`;
   return selector.value;
 }
 
@@ -81,10 +78,9 @@ function scriptStepToSessionStep(step: FormScriptStep, fallbackTs: number): Sess
     scriptStep: step,
     selector,
     selectors: [selector],
-    displayName: selector,
+    displayName: stepToDisplayName(step) || selector,
     tagName: step.type === "click" ? "button" : "field",
     value: step.type === "input" || step.type === "select" ? step.value : undefined,
-    masked: step.type === "input" ? step.masked : undefined,
     ts: step.timestamp,
   };
 }
@@ -93,15 +89,14 @@ function stepToDisplayName(step: FormScriptStep): string {
   if (step.type === "wait") return `Wait ${step.ms}ms`;
   if (step.type === "navigate") return `Navigate to ${step.url}`;
   if (step.type === "assert") return `Assert ${step.assertion}`;
-  if (step.type === "input") return step.masked ? "(masked)" : step.value;
+  if (step.type === "input") return step.value;
   if (step.type === "select") return step.value;
   if (step.type === "keyboard") return step.key;
+  if (step.type === "click") return "Click";
   return "";
 }
 
-export function recordedScriptToStoredSession(
-  formScript: FormScript,
-): StoredSessionV2 {
+export function recordedScriptToStoredSession(formScript: FormScript): StoredSessionV2 {
   return {
     id: formScript.id,
     name: formScript.name,
@@ -118,7 +113,10 @@ export function recordedScriptToStoredSession(
     metadata: {
       title: formScript.name,
       description: `${formScript.steps.length} steps`,
-      duration: formScript.steps.reduce((acc, step) => acc + (step.type === "wait" ? step.ms : 0), 0),
+      duration: formScript.steps.reduce(
+        (acc, step) => acc + (step.type === "wait" ? step.ms : 0),
+        0,
+      ),
     },
   };
 }
@@ -139,13 +137,27 @@ export function readStoredSessions(storage: Storage = localStorage): StoredSessi
   try {
     const raw = storage.getItem(SESSION_STORAGE_KEY_V2);
     if (!raw) return [];
-    return JSON.parse(raw) as StoredSessionV2[];
+    const sessions = JSON.parse(raw) as StoredSessionV2[];
+    let migrated = false;
+    for (const session of sessions) {
+      if (session.id === "__draft__") {
+        session.id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      writeStoredSessions(sessions, storage);
+    }
+    return sessions;
   } catch {
     return [];
   }
 }
 
-export function writeStoredSessions(sessions: StoredSessionV2[], storage: Storage = localStorage): void {
+export function writeStoredSessions(
+  sessions: StoredSessionV2[],
+  storage: Storage = localStorage,
+): void {
   const trimmed = sessions.slice(0, DEFAULT_MAX_SESSIONS);
   storage.setItem(SESSION_STORAGE_KEY_V2, JSON.stringify(trimmed));
 }
@@ -174,9 +186,8 @@ export function updateStoredSession(
   const sessions = readStoredSessions(storage);
   const index = sessions.findIndex((s) => s.id === id);
   if (index >= 0 && sessions[index]) {
-    const updated = typeof update === "function"
-      ? update(sessions[index])
-      : { ...sessions[index], ...update };
+    const updated =
+      typeof update === "function" ? update(sessions[index]) : { ...sessions[index], ...update };
     sessions[index] = updated;
     writeStoredSessions(sessions, storage);
   }
