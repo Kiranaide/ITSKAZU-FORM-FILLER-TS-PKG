@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  SESSION_STORAGE_KEY_V2,
-  readStoredSessions,
-  writeStoredSessions,
-} from "./recording-store";
+import { readStoredSessions, SESSION_STORAGE_KEY_V2, writeStoredSessions } from "./recording-store";
 
 const createStorage = (): Storage => {
   const store: Record<string, string> = {};

@@ -43,6 +43,7 @@ export function extractSelectors(el: Element): ElementSelector {
     autocomplete: 0.84,
     readonly: 0.8,
     "aria-describedby": 0.72,
+    "data-value": 0.88,
   };
   for (const attr of Object.keys(attrConfidence)) {
     const val =
@@ -59,6 +60,10 @@ export function extractSelectors(el: Element): ElementSelector {
         ? -0.18
         : 0;
     const uniquenessPenalty = unique ? 0 : -0.35;
+    // Non-unique placeholder selectors cause replay to keep hitting the first field.
+    if (attr === "placeholder" && !unique) {
+      continue;
+    }
     if (attr === "readonly" && !unique) {
       continue;
     }

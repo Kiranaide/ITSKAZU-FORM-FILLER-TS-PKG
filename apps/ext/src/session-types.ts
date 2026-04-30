@@ -12,7 +12,6 @@ export interface SessionStep {
   inputType?: string | undefined;
   value?: string | undefined;
   checked?: boolean | undefined;
-  masked?: boolean | undefined;
   optionText?: string | undefined;
   url?: string | undefined;
   ms?: number | undefined;
@@ -29,18 +28,22 @@ export interface StoredSessionV2 {
   updatedAt: number;
   lastRunAt?: number;
   steps: SessionStep[];
-  viewState?: {
-    scrollX: number;
-    scrollY: number;
-    viewport: { w: number; h: number };
-  } | undefined;
+  viewState?:
+    | {
+        scrollX: number;
+        scrollY: number;
+        viewport: { w: number; h: number };
+      }
+    | undefined;
   browser: {
     url: string;
     userAgent: string;
   };
-  metadata?: {
-    title?: string;
-    description?: string;
-    duration?: number;
-  } | undefined;
+  metadata?:
+    | {
+        title?: string;
+        description?: string;
+        duration?: number;
+      }
+    | undefined;
 }

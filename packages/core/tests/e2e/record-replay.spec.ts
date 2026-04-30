@@ -14,14 +14,12 @@ test("record and replay basic form values", async ({ page }) => {
         type: "input" as const,
         selector: { kind: "id" as const, value: "name" },
         value: "Kazu",
-        masked: false,
         timestamp: 1,
       },
       {
         type: "input" as const,
         selector: { kind: "id" as const, value: "email" },
         value: "kazu@example.com",
-        masked: false,
         timestamp: 2,
       },
       {

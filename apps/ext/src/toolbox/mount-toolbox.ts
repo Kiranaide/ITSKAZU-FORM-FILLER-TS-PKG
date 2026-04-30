@@ -1,23 +1,21 @@
+import { type AssertionProperty, createAssertStep, type ReplayPerformanceResult } from "kazu-fira";
 import {
   deleteStoredSession,
   readStoredSessions,
   saveStoredSession,
   updateStoredSession,
 } from "../cli/recording-store.js";
-import {
-  createAssertStep,
-  type AssertionProperty,
-  type ReplayPerformanceResult,
-} from "kazu-fira";
 import type { StoredSessionV2 } from "../session-types.js";
 import { createToolboxCoreFacade } from "./core-facade.js";
+import { type LogLevel, LogManager } from "./log-manager.js";
 
 const MOUNT_ATTR = "data-toolbox-mounted";
 const ROOT_ID = "__toolbox-root";
-const COLLAPSE_KEY = "kazu-fira:toolbox:collapsed:v1";
 
 type ToolboxState = {
-  collapsed: boolean;
+  mode: "simple" | "advanced";
+  panelCollapsed: Record<string, boolean>;
+  fabOpen: boolean;
   currentSessionId: string;
   renamingId: string;
   runningSessionId: string;
@@ -26,37 +24,49 @@ type ToolboxState = {
   lastRunLabel: string;
   errorCount: number;
   lastReplay: ReplayPerformanceResult | null;
-  draftSession: StoredSessionV2 | null;
+  logFilter: LogLevel | "all";
+  logAutoScroll: boolean;
 };
 
 type ToolboxElements = {
-  app: HTMLElement;
-  state: HTMLElement;
+  fab: HTMLElement;
+  toolboxWrap: HTMLElement;
+  modeSimple: HTMLButtonElement;
+  modeAdv: HTMLButtonElement;
+  stateBadge: HTMLElement;
+  stateDot: HTMLElement;
+  stateText: HTMLElement;
   count: HTMLElement;
+  sessionsCount: HTMLElement;
+  sessionsCountLabel: HTMLElement;
   errors: HTMLElement;
-  active: HTMLElement;
-  logs: HTMLElement;
+  selName: HTMLElement;
+  selRun: HTMLButtonElement;
+  selBar: HTMLElement;
+  stepList: HTMLElement;
+  progressFill: HTMLElement;
+  progressLabel: HTMLElement;
+  progressCounter: HTMLElement;
   record: HTMLButtonElement;
   stop: HTMLButtonElement;
   run: HTMLButtonElement;
   pause: HTMLButtonElement;
   step: HTMLButtonElement;
-  export: HTMLButtonElement;
-  assert: HTMLButtonElement;
+  exportBtn: HTMLButtonElement;
+  assertBtn: HTMLButtonElement;
   scan: HTMLButtonElement;
   save: HTMLButtonElement;
   newSession: HTMLButtonElement;
-  collapse: HTMLButtonElement;
   sessionsGrid: HTMLElement;
-  sessionsPane: HTMLElement;
-  detailPane: HTMLElement;
-  sessionsCount: HTMLElement;
-  lastRun: HTMLElement;
-  stepCounter: HTMLElement;
-  activeInfo: HTMLElement;
-  activeTitle: HTMLElement;
-  runningBadge: HTMLElement;
-  progressBar: HTMLElement;
+  chevSessions: HTMLElement;
+  chevProgress: HTMLElement;
+  chevSteps: HTMLElement;
+  chevLog: HTMLElement;
+  bodySessions: HTMLElement;
+  bodyProgress: HTMLElement;
+  bodySteps: HTMLElement;
+  bodyLog: HTMLElement;
+  advCol: HTMLElement;
   assertModal: HTMLElement;
   assertSelector: HTMLInputElement;
   assertProperty: HTMLSelectElement;
@@ -65,10 +75,11 @@ type ToolboxElements = {
   assertError: HTMLElement;
   assertCancel: HTMLButtonElement;
   assertApply: HTMLButtonElement;
+  systemLogEntries: HTMLElement;
 };
 
-function icon(body: string, fill = false): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="icon-tabler" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="${fill ? "currentColor" : "none"}" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path>${body}</svg>`;
+function icon(body: string, fill = false, size = 12): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="icon-tabler" width="${size}" height="${size}" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="${fill ? "currentColor" : "none"}" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path>${body}</svg>`;
 }
 
 const ICONS = {
@@ -87,7 +98,9 @@ const ICONS = {
   save: icon(
     `<path d="M6 4h9l5 5v11a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1v-15a1 1 0 0 1 1 -1"></path><path d="M14 4v4h-6v-4"></path><path d="M8 18h8"></path><path d="M8 14h8v7h-8z"></path>`,
   ),
-  export: icon(`<path d="M12 3v12"></path><path d="M8 11l4 4l4 -4"></path><path d="M5 21h14"></path>`),
+  export: icon(
+    `<path d="M12 3v12"></path><path d="M8 11l4 4l4 -4"></path><path d="M5 21h14"></path>`,
+  ),
   assert: icon(`<path d="M9 9a3 3 0 1 1 6 0c0 2 -3 3 -3 5"></path><path d="M12 18h.01"></path>`),
   edit: icon(
     `<path d="M7 20h10"></path><path d="M6 16l0 4l4 0l10 -10a2.828 2.828 0 0 0 -4 -4l-10 10"></path>`,
@@ -98,133 +111,273 @@ const ICONS = {
 
 const TOOLBOX_HTML = `<style>
 :host{all:initial}
+:host{--pink:#e91e8c;--pink-dim:rgba(233,30,140,0.12);--pink-glow:rgba(233,30,140,0.25);--surface:#0d0d0f;--surface-1:#141417;--surface-2:#1c1c21;--surface-3:#242429;--border:rgba(255,255,255,0.07);--border-hover:rgba(255,255,255,0.13);--border-accent:rgba(233,30,140,0.35);--text-1:#f0f0f2;--text-2:#8a8a95;--text-3:#4a4a55;--success:#1db37a;--success-dim:rgba(29,179,122,0.12);--warn:#f0a500;--warn-dim:rgba(240,165,0,0.12);--danger:#e8433a;--danger-dim:rgba(232,67,58,0.12);--info:#3d8ef0;--info-dim:rgba(61,142,240,0.12);--font-ui:"Geist",ui-sans-serif,system-ui,sans-serif;--font-mono:"Fira Code",ui-monospace,monospace;--radius:10px;--radius-sm:6px;--radius-pill:999px;--transition:0.18s cubic-bezier(0.4,0,0.2,1)}
 *{box-sizing:border-box;margin:0;padding:0}
-.app{position:fixed;bottom:16px;right:16px;z-index:2147483647;width:min(480px,94vw);font:12px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#0f1419;color:#e2e8f0;border:0.5px solid #334155;border-radius:14px;box-shadow:0 12px 40px rgba(2,6,23,.6);overflow:hidden}
-.app.collapsed{width:min(260px,92vw)}
-.header{background:#111827;border-bottom:0.5px solid #334155;padding:10px 14px;display:flex;align-items:center;justify-content:space-between}
-.header-title{font-size:14px;font-weight:600}
-.header-right{display:flex;align-items:center;gap:8px}
-.collapse-btn{padding:4px 8px;min-width:26px;font-size:12px;line-height:1}
-.status-pill{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500}
-.status-idle{background:#1e293b;color:#94a3b8;border:0.5px solid #334155}
-.status-running{background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3)}
-.status-recording{background:rgba(239,68,68,0.15);color:#f87171;border:0.5px solid rgba(239,68,68,0.3)}
-.toolbar{display:flex;gap:6px;padding:10px 14px;background:#111827;border-bottom:0.5px solid #334155;align-items:center}
-.toolbar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1}
-.btn-ico{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:0 0 14px}
-.btn-label{line-height:1}
-.btn-ico svg,.collapse-btn svg,.icon-btn svg,.log-icon svg{width:14px;height:14px;display:block}
-.app.collapsed .btn-label,.app.collapsed .stats-bar,.app.collapsed .body,.app.collapsed .session-label{display:none}
-.app.collapsed .toolbar{gap:4px}
-.app.collapsed button{padding:5px 8px;min-width:28px}
-button{font-family:inherit;cursor:pointer;font-size:12px;border-radius:8px;border:0.5px solid #475569;background:transparent;color:#e2e8f0;padding:5px 12px;transition:background .12s}
-button:hover{background:#1e293b}
-button:disabled{opacity:.5;cursor:not-allowed}
-button.primary{background:rgba(59,130,246,0.15);color:#60a5fa;border-color:rgba(59,130,246,0.3)}
-button.primary:hover{background:rgba(59,130,246,0.25)}
-button.danger-soft{color:#f87171;border-color:rgba(239,68,68,0.3)}
-button.danger-soft:hover{background:rgba(239,68,68,0.15)}
-button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
-.stats-bar{display:flex;gap:0;border-bottom:0.5px solid #334155;background:#0d1117}
-.stat{flex:1;padding:8px 14px;font-size:11px;color:#94a3b8;border-right:0.5px solid #334155}
-.stat:last-child{border-right:none}
-.stat strong{display:block;font-size:16px;font-weight:600;color:#e2e8f0;line-height:1.3}
-.stat.danger strong{color:#f87171}
-.body{display:flex;height:320px}
-.sessions-pane{width:55%;border-right:0.5px solid #334155;display:flex;flex-direction:column}
-.pane-header{padding:8px 12px;font-size:11px;font-weight:500;color:#94a3b8;border-bottom:0.5px solid #334155;display:flex;align-items:center;justify-content:space-between;background:#111827;text-transform:uppercase;letter-spacing:.04em}
-.sessions-grid{padding:8px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1}
-.session-card{background:#111827;border:0.5px solid #334155;border-radius:8px;padding:8px 10px;cursor:pointer;transition:border-color .12s}
-.session-card:hover{border-color:#475569}
-.session-card.active{border-color:rgba(59,130,246,0.5);background:rgba(59,130,246,0.08)}
-.session-card.active .session-meta{color:#60a5fa}
-.session-top{display:flex;align-items:center;gap:6px}
-.session-name{font-size:12px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.session-name-input{font-size:12px;font-weight:500;flex:1;border:none;background:transparent;color:#e2e8f0;font-family:inherit;outline:none;border-bottom:1px solid #60a5fa;padding:0}
-.session-actions{display:flex;gap:3px;opacity:0;transition:opacity .12s}
-.session-card:hover .session-actions,.session-card.active .session-actions{opacity:1}
-.session-meta{font-size:10px;color:#64748b;margin-top:5px;display:flex;gap:8px;align-items:center}
-.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
-.badge-blue{background:rgba(59,130,246,0.15);color:#60a5fa}
-.badge-gray{background:#1e293b;color:#94a3b8;border:0.5px solid #334155}
-.detail-pane{flex:1;display:flex;flex-direction:column}
-.active-session-info{padding:10px 12px;border-bottom:0.5px solid #334155;background:#111827}
-.progress-bar-wrap{background:#1e293b;border-radius:20px;height:4px;margin-top:6px;overflow:hidden}
-.progress-bar-fill{height:4px;border-radius:20px;background:#3b82f6;width:0%;transition:width .3s}
-.log-area{flex:1;overflow-y:auto;padding:8px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;display:flex;flex-direction:column;gap:3px;white-space:pre-wrap}
-.log-line{padding:4px 8px;border-radius:6px;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
-.log-line.done{background:rgba(34,197,94,0.1);color:#4ade80}
-.log-line.pending{background:#1e293b;color:#94a3b8}
-.log-line.running{background:rgba(59,130,246,0.15);color:#60a5fa}
-.log-line.error{background:rgba(239,68,68,0.1);color:#f87171}
-.log-icon{font-size:11px;margin-top:1px;flex-shrink:0}
-.empty-state{color:#64748b;font-size:12px;text-align:center;padding:24px 14px;font-family:inherit}
-.toolbar-spacer{flex:1}
-.session-label{font-size:11px;color:#64748b}
-.toolbar-session-label{font-size:11px;color:#64748b;padding:8px 12px;border-bottom:0.5px solid #334155;background:#111827;text-transform:uppercase;letter-spacing:.04em}
-.assert-modal{position:fixed;inset:0;background:rgba(2,6,23,.55);display:none;align-items:center;justify-content:center;z-index:2147483648}
+.fab{position:fixed;bottom:28px;right:28px;width:44px;height:44px;border-radius:50%;background:var(--pink);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:100;box-shadow:0 0 0 0 var(--pink-glow);transition:box-shadow var(--transition),transform var(--transition),background var(--transition)}
+.fab:hover{background:#c4176e;transform:scale(1.08);box-shadow:0 0 20px var(--pink-glow)}
+.fab:active{transform:scale(0.95)}
+.fab svg{transition:transform 0.22s cubic-bezier(0.34,1.56,0.64,1),opacity 0.15s;position:absolute}
+.fab .icon-open{opacity:1;transform:rotate(0deg) scale(1)}
+.fab .icon-close{opacity:0;transform:rotate(-90deg) scale(0.5)}
+.fab.active .icon-open{opacity:0;transform:rotate(90deg) scale(0.5)}
+.fab.active .icon-close{opacity:1;transform:rotate(0deg) scale(1)}
+.fab.recording::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1.5px solid var(--pink);animation:pulse-ring 1.4s ease-out infinite}
+@keyframes pulse-ring{0%{opacity:0.7;transform:scale(1)}100%{opacity:0;transform:scale(1.6)}}
+.toolbox-wrap{position:fixed;bottom:84px;right:28px;width:300px;z-index:99;display:flex;flex-direction:column;gap:6px;transform-origin:bottom right;transition:opacity 0.18s ease,transform 0.2s cubic-bezier(0.34,1.3,0.64,1)}
+.toolbox-wrap.hidden{opacity:0;pointer-events:none;transform:scale(0.85) translateY(8px)}
+.toolbox-wrap.visible{opacity:1;transform:scale(1) translateY(0)}
+.toolbox-wrap .panel{opacity:0;transform:translateY(6px);transition:opacity 0.18s ease,transform 0.2s cubic-bezier(0.34,1.3,0.64,1)}
+.toolbox-wrap.visible .panel{opacity:1;transform:translateY(0)}
+.toolbox-wrap.visible .panel:nth-child(1){transition-delay:0.03s}
+.toolbox-wrap.visible .panel:nth-child(2){transition-delay:0.07s}
+.toolbox-wrap.visible .panel:nth-child(3){transition-delay:0.11s}
+.toolbox-wrap.visible .panel:nth-child(4){transition-delay:0.15s}
+.toolbox-wrap.visible .panel:nth-child(5){transition-delay:0.18s}
+.toolbox-wrap .panel:nth-child(1){transition-delay:0.06s}
+.toolbox-wrap .panel:nth-child(2){transition-delay:0.02s}
+.toolbox-wrap .panel:nth-child(3){transition-delay:0s}
+.toolbox-wrap .panel:nth-child(4){transition-delay:0s}
+.toolbox-wrap .panel:nth-child(5){transition-delay:0s}
+.panel{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);transition:border-color var(--transition)}
+.panel:hover{border-color:var(--border-hover)}
+.panel-body{overflow:hidden;max-height:600px;transition:max-height 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.2s;opacity:1}
+.panel-body.collapsed{max-height:0;opacity:0}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;cursor:pointer;user-select:none;transition:background var(--transition)}
+.panel-head:hover{background:var(--surface-2)}
+.panel-label{font-size:9px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-3);font-family:var(--font-ui)}
+.panel-right{display:flex;align-items:center;gap:6px}
+.chevron{color:var(--text-3);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1)}
+.chevron.open{transform:rotate(180deg)}
+.sep{height:1px;background:var(--border)}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 9px}
+.tool-title{font-size:13px;font-weight:700;color:var(--text-1);letter-spacing:-0.01em;font-family:var(--font-ui)}
+.status-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;padding:3px 7px 3px 6px;border-radius:var(--radius-pill);background:var(--surface-3);color:var(--text-3);transition:background var(--transition),color var(--transition);font-family:var(--font-ui)}
+.status-dot{width:5px;height:5px;border-radius:50%;background:var(--text-3);transition:background var(--transition),box-shadow var(--transition)}
+.status-dot.recording{background:var(--danger);box-shadow:0 0 4px var(--danger);animation:pulse-dot 1.2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(0.65);opacity:0.5}}
+.status-badge.recording{background:var(--danger-dim);color:var(--danger)}
+.mode-toggle{display:flex;background:var(--surface-3);border-radius:var(--radius-pill);padding:2px;gap:1px}
+.mode-btn{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-ui);font-size:9px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:4px 10px;border-radius:var(--radius-pill);border:none;background:transparent;color:var(--text-3);cursor:pointer;position:relative;z-index:1;transition:background var(--transition) 0.03s,color var(--transition) 0.03s}
+.mode-btn svg{opacity:0.55;transition:opacity var(--transition)}
+.mode-btn.active{background:var(--surface-1);color:var(--text-1);box-shadow:0 1px 3px rgba(0,0,0,0.4)}
+.mode-btn.active svg{opacity:1}
+.mode-btn:hover:not(.active){color:var(--text-2)}
+.mode-btn:hover:not(.active) svg{opacity:0.8}
+.controls-row{display:flex;align-items:center;gap:5px;padding:8px 11px;flex-wrap:wrap}
+.ctrl-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;font-family:var(--font-ui);font-size:9px;font-weight:600;letter-spacing:0.02em;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;white-space:nowrap;transition:background var(--transition),border-color var(--transition),color var(--transition),transform 0.1s}
+.ctrl-btn:hover{background:var(--surface-3);border-color:var(--border-hover);color:var(--text-1)}
+.ctrl-btn:active{transform:scale(0.95)}
+.ctrl-btn:disabled{opacity:0.4;cursor:not-allowed;pointer-events:none}
+.ctrl-btn.primary{background:var(--pink);border-color:var(--pink);color:#fff}
+.ctrl-btn.primary:hover{background:#c4176e;border-color:#c4176e}
+.ctrl-btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.ctrl-btn.danger:hover{background:#d0322a;border-color:#d0322a}
+.ctrl-div{width:1px;height:14px;background:var(--border);flex-shrink:0}
+.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;padding:8px 11px 10px}
+.stat{display:flex;flex-direction:column;gap:2px;padding:0 6px 0 0}
+.stat+.stat{padding-left:8px;border-left:1px solid var(--border)}
+.stat-num{font-size:18px;font-weight:700;color:var(--text-1);line-height:1;letter-spacing:-0.03em;font-family:var(--font-ui)}
+.stat-num.err{color:var(--danger)}
+.stat-label{font-size:9px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-3);font-family:var(--font-ui)}
+.session-head{display:flex;align-items:center;justify-content:space-between;padding:6px 11px}
+.session-count{font-size:9px;color:var(--text-3);font-weight:500;letter-spacing:0.05em;text-transform:uppercase;font-family:var(--font-ui)}
+.new-btn{font-family:var(--font-ui);font-size:9px;font-weight:600;letter-spacing:0.04em;color:var(--pink);background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:var(--radius-sm);transition:background var(--transition)}
+.new-btn:hover{background:var(--pink-dim)}
+.new-btn:disabled{opacity:0.4;cursor:not-allowed}
+.session-scroll{max-height:150px;overflow-y:auto}
+.session-item{display:flex;align-items:center;gap:8px;padding:7px 11px;cursor:pointer;border-top:1px solid var(--border);transition:background var(--transition);position:relative}
+.session-item:hover{background:var(--surface-2)}
+.session-item.active{background:var(--surface-2)}
+.session-item.active::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:0 2px 2px 0;background:var(--pink)}
+.s-dot{width:6px;height:6px;border-radius:50%;background:var(--surface-3);border:1px solid var(--border-hover);flex-shrink:0;transition:background var(--transition),border-color var(--transition)}
+.s-dot.active{background:var(--pink);border-color:var(--pink);box-shadow:0 0 6px var(--pink-glow)}
+.s-info{flex:1;min-width:0}
+.s-name{font-size:11px;font-weight:600;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-0.01em;font-family:var(--font-ui)}
+.s-name-input{font-size:11px;font-weight:600;flex:1;border:none;background:transparent;color:var(--text-1);font-family:var(--font-ui);outline:none;border-bottom:1px solid var(--pink);padding:0}
+.s-meta{font-size:9px;color:var(--text-3);font-family:var(--font-mono);margin-top:1px}
+.s-actions{display:flex;gap:3px;opacity:0;transition:opacity var(--transition)}
+.session-item:hover .s-actions{opacity:1}
+.s-actions button{padding:3px;min-width:20px;height:20px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:background var(--transition),color var(--transition)}
+.s-actions button:hover{background:var(--surface-3);color:var(--text-1)}
+.selected-bar{display:none;padding:7px 11px;align-items:center;justify-content:space-between;border-top:1px solid var(--border-accent);background:var(--pink-dim)}
+.selected-bar.show{display:flex}
+.sel-label{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--pink);margin-bottom:1px;font-family:var(--font-ui)}
+.sel-name{font-size:11px;font-weight:600;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;letter-spacing:-0.01em;font-family:var(--font-ui)}
+.run-btn{font-family:var(--font-ui);font-size:10px;font-weight:700;letter-spacing:0.04em;padding:5px 11px;background:var(--pink);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;transition:background var(--transition),transform 0.1s}
+.run-btn:hover{background:#c4176e}
+.run-btn:active{transform:scale(0.95)}
+.mini-progress{padding:9px 11px;display:flex;align-items:center;gap:8px}
+.progress-track{flex:1;height:3px;border-radius:2px;background:var(--surface-3);overflow:hidden}
+.progress-fill{height:100%;width:0%;border-radius:2px;background:linear-gradient(90deg,var(--pink),#ff6ab0);position:relative;overflow:hidden;transition:width 0.35s cubic-bezier(0.4,0,0.2,1)}
+.progress-fill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.35) 50%,transparent 100%);animation:shimmer 1.8s infinite}
+@keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(200%)}}
+.progress-label{font-size:10px;font-family:var(--font-mono);color:var(--text-3);flex-shrink:0}
+@keyframes step-pulse{0%,100%{box-shadow:0 0 6px var(--pink-glow)}50%{box-shadow:0 0 16px var(--pink-glow),0 0 24px color-mix(in srgb,var(--pink) 60%,transparent)}}
+@keyframes log-slide-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.step-list{display:flex;flex-direction:column}
+.step-scroll{max-height:210px;overflow-y:auto}
+.step{display:flex;align-items:center;gap:9px;padding:6px 11px;border-top:1px solid var(--border);transition:background var(--transition)}
+.step:first-child{border-top:none}
+.step:hover{background:var(--surface-2)}
+.step-num{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;font-weight:700;font-family:var(--font-mono);background:var(--surface-3);color:var(--text-3);border:1px solid var(--border);transition:background var(--transition),color var(--transition),border-color var(--transition),box-shadow var(--transition)}
+.step-num.done{background:var(--success-dim);color:var(--success);border-color:rgba(29,179,122,0.2)}
+.step-num.active{background:var(--pink);color:#fff;border-color:var(--pink);box-shadow:0 0 8px var(--pink-glow);animation:step-pulse 1.2s ease-in-out infinite}
+.step-num.err{background:var(--danger-dim);color:var(--danger);border-color:rgba(232,67,58,0.2)}
+.step-text{font-size:11px;color:var(--text-2);letter-spacing:-0.01em;font-family:var(--font-ui)}
+.step-text.active{color:var(--text-1);font-weight:600}
+.step-text.done{color:var(--text-3);text-decoration:line-through;text-decoration-color:var(--surface-3)}
+.step-type{display:inline-flex;font-size:7px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:1px 5px;border-radius:4px;font-family:var(--font-mono);flex-shrink:0;line-height:1.5;margin-right:1px;transition:opacity var(--transition)}
+.step-type.click{background:rgba(61,142,240,0.13);color:#5b9cf5}
+.step-type.input{background:rgba(29,179,122,0.13);color:#2ecc81}
+.step-type.select{background:rgba(240,165,0,0.13);color:#f5b342}
+.step-type.keyboard{background:rgba(233,30,140,0.13);color:#e91e8c}
+.progress-footer{padding:8px 11px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.log-tabs{display:flex;gap:2px;padding:7px 9px 0}
+.log-tab{font-family:var(--font-ui);font-size:9px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:3px 8px;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-3);cursor:pointer;transition:background var(--transition),color var(--transition)}
+.log-tab.active{background:var(--surface-3);color:var(--text-1)}
+.log-entries{padding:6px 10px 8px;display:flex;flex-direction:column;gap:2px;max-height:96px;overflow-y:auto}
+.log-entry{display:flex;gap:7px;font-family:var(--font-mono);font-size:10px;padding:2px 3px;border-radius:3px;transition:background var(--transition);animation:log-slide-in 0.2s ease-out both}
+.log-entry:hover{background:var(--surface-2)}
+.log-time{color:var(--text-3);flex-shrink:0}
+.log-lvl{flex-shrink:0;font-weight:500}
+.log-lvl.info{color:var(--info)}
+.log-lvl.warn{color:var(--warn)}
+.log-lvl.err{color:var(--danger)}
+.log-msg{color:var(--text-2)}
+.adv-col{display:none;flex-direction:column;gap:6px}
+.adv-col.show{display:flex}
+.assert-modal{position:fixed;inset:0;background:rgba(2,6,23,.55);display:none;align-items:center;justify-content:center;z-index:101}
 .assert-modal.open{display:flex}
-.assert-card{width:min(380px,92vw);background:#0f172a;border:0.5px solid #334155;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(2,6,23,.6)}
-.assert-title{font-size:13px;font-weight:600}
+.assert-card{width:min(380px,92vw);background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:10px}
+.assert-title{font-size:13px;font-weight:700;color:var(--text-1);font-family:var(--font-ui)}
 .assert-row{display:flex;flex-direction:column;gap:6px}
-.assert-label{font-size:11px;color:#94a3b8}
-.assert-input,.assert-select{background:#111827;border:0.5px solid #475569;color:#e2e8f0;border-radius:8px;padding:7px 9px;font:12px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-.assert-input::placeholder{color:#64748b}
+.assert-label{font-size:11px;color:var(--text-2);font-family:var(--font-ui)}
+.assert-input,.assert-select{background:var(--surface-2);border:1px solid var(--border);color:var(--text-1);border-radius:var(--radius-sm);padding:7px 9px;font:12px var(--font-ui)}
+.assert-input::placeholder{color:var(--text-3)}
 .assert-actions{display:flex;justify-content:flex-end;gap:8px}
-.assert-hint{font-size:11px;color:#64748b}
-.assert-error{font-size:11px;color:#f87171;min-height:16px}
+.assert-actions button{font-family:var(--font-ui);font-size:12px;font-weight:600;padding:5px 11px;border-radius:var(--radius-sm);border:none;cursor:pointer}
+.assert-actions button.primary{background:var(--pink);color:#fff}
+.assert-actions button.primary:hover{background:#c4176e}
+.assert-hint{font-size:11px;color:var(--text-3);font-family:var(--font-ui)}
+.assert-error{font-size:11px;color:var(--danger);min-height:16px;font-family:var(--font-ui)}
+*{scrollbar-width:thin;scrollbar-color:var(--surface-3) transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent;border-radius:4px}
+::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:4px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--surface-2);background-clip:content-box}
 </style>
-<div class="app" data-kazu-toolbox="true">
-  <div class="header">
-    <span class="header-title">Form Filler</span>
-    <div class="header-right">
-      <button class="collapse-btn" id="toolbox-collapse-toggle" title="Collapse">${ICONS.chevronDown}</button>
-      <span class="status-pill status-idle" id="toolbox-state">Idle</span>
+<button class="fab" id="toolbox-fab">
+  <svg class="icon-open" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><line x1="2.5" y1="8" x2="13.5" y2="8"/><line x1="2.5" y1="12" x2="13.5" y2="12"/></svg>
+  <svg class="icon-close" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="11.5" y2="11.5"/><line x1="11.5" y1="1.5" x2="1.5" y2="11.5"/></svg>
+</button>
+<div class="toolbox-wrap hidden" id="toolbox-wrap">
+  <div class="panel">
+    <div class="top-bar">
+      <div style="display:flex;align-items:center;gap:7px">
+        <span class="tool-title">Kazu Fira</span>
+        <span class="status-badge" id="toolbox-state-badge">
+          <span class="status-dot" id="toolbox-state-dot"></span>
+          <span class="status-text" id="toolbox-state-text">Idle</span>
+        </span>
+      </div>
+      <div class="mode-toggle" role="radiogroup" aria-label="Mode">
+        <button class="mode-btn active" id="toolbox-mode-simple" role="radio" aria-checked="true">
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="4" cy="4" r="2.5"/></svg>Simple
+        </button>
+        <button class="mode-btn" id="toolbox-mode-adv" role="radio" aria-checked="false">
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="4" cy="4" r="2.2"/><path d="M4 1v1M4 6v1M1 4h1M6 4h1"/></svg>Advanced
+        </button>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div class="controls-row">
+      <button class="ctrl-btn primary" id="toolbox-record">${ICONS.record}<span>Record</span></button>
+      <button class="ctrl-btn" id="toolbox-stop" disabled>${ICONS.stop}<span>Stop</span></button>
+      <div class="ctrl-div"></div>
+      <button class="ctrl-btn" id="toolbox-run">${ICONS.play}<span>Run</span></button>
+      <button class="ctrl-btn" id="toolbox-pause" disabled>${ICONS.pause}<span>Pause</span></button>
+      <button class="ctrl-btn" id="toolbox-step" disabled>${ICONS.step}<span>Step</span></button>
+    </div>
+    <div class="controls-row">
+      <button class="ctrl-btn" id="toolbox-export">${ICONS.export}<span>Export</span></button>
+      <button class="ctrl-btn" id="toolbox-assert">${ICONS.assert}<span>Assert</span></button>
+      <button class="ctrl-btn" id="toolbox-scan">${ICONS.scan}<span>Scan</span></button>
+      <button class="ctrl-btn" id="toolbox-save">${ICONS.save}<span>Save</span></button>
+    </div>
+    <div class="sep"></div>
+    <div class="stats-row">
+      <div class="stat"><span class="stat-num" id="toolbox-count">0</span><span class="stat-label">Mapped</span></div>
+      <div class="stat"><span class="stat-num" id="toolbox-sessions-count">0</span><span class="stat-label">Sessions</span></div>
+      <div class="stat"><span class="stat-num err" id="toolbox-errors">0</span><span class="stat-label">Errors</span></div>
     </div>
   </div>
-  <div class="toolbar">
-    <button class="primary" id="toolbox-record" title="Record"><span class="btn-ico">${ICONS.record}</span><span class="btn-label">Record</span></button>
-    <button id="toolbox-stop" disabled title="Stop"><span class="btn-ico">${ICONS.stop}</span><span class="btn-label">Stop</span></button>
-    <button id="toolbox-run" title="Run"><span class="btn-ico">${ICONS.play}</span><span class="btn-label">Run</span></button>
-    <button id="toolbox-pause" disabled title="Pause / Resume"><span class="btn-ico">${ICONS.pause}</span><span class="btn-label">Pause</span></button>
-    <button id="toolbox-step" disabled title="Step"><span class="btn-ico">${ICONS.step}</span><span class="btn-label">Step</span></button>
-    <button id="toolbox-export" title="Export Playwright"><span class="btn-ico">${ICONS.export}</span><span class="btn-label">Export</span></button>
-    <button id="toolbox-assert" title="Add assertion"><span class="btn-ico">${ICONS.assert}</span><span class="btn-label">Assert</span></button>
-    <button id="toolbox-scan" title="Scan"><span class="btn-ico">${ICONS.scan}</span><span class="btn-label">Scan</span></button>
-    <button id="toolbox-save" title="Save"><span class="btn-ico">${ICONS.save}</span><span class="btn-label">Save</span></button>
-    <div class="toolbar-spacer"></div>
-  </div>
-  <div class="toolbar-session-label">
-    <span class="session-label" id="toolbox-active">No active session</span>
-  </div>
-  <div class="stats-bar">
-    <div class="stat"><strong id="toolbox-count">0</strong>Fields Mapped</div>
-    <div class="stat"><strong id="toolbox-sessions-count">0</strong>Saved Sessions</div>
-    <div class="stat danger"><strong id="toolbox-errors">0</strong>Errors</div>
-    <div class="stat"><strong id="toolbox-last-run">Never</strong>Last Run</div>
-  </div>
-  <div class="body">
-    <div class="sessions-pane" id="toolbox-sessions-pane">
-      <div class="pane-header">
-        <span>Saved sessions</span>
-        <button class="icon-btn" id="toolbox-new-session">+ New</button>
+  <div class="panel" id="p-sessions">
+    <div class="panel-head" data-panel="p-sessions">
+      <span class="panel-label">Sessions</span>
+      <div class="panel-right">
+        <svg class="chevron open" id="chev-p-sessions" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="2,4 6,8 10,4"/></svg>
       </div>
-      <div class="sessions-grid" id="toolbox-sessions-grid"></div>
     </div>
-    <div class="detail-pane" id="toolbox-detail-pane">
-      <div class="pane-header">
-        <span>Session detail</span>
-        <span id="toolbox-step-counter" style="font-weight:400;text-transform:none;letter-spacing:0"></span>
+    <div class="panel-body" id="body-p-sessions">
+      <div class="session-head">
+        <span class="session-count" id="toolbox-session-count-label">0 recordings</span>
+        <button class="new-btn" id="toolbox-new-session">+ New</button>
       </div>
-      <div class="active-session-info" id="toolbox-active-info" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;font-weight:500" id="toolbox-active-title">-</span>
-          <span class="badge badge-blue" id="toolbox-running-badge" style="display:none">running</span>
+      <div class="selected-bar" id="toolbox-selected-bar">
+        <div style="min-width:0"><div class="sel-label">Selected</div><div class="sel-name" id="toolbox-sel-name">Select a session</div></div>
+        <button class="run-btn" id="toolbox-sel-run">▶ Run</button>
+      </div>
+      <div class="session-scroll" id="toolbox-sessions-grid"></div>
+    </div>
+  </div>
+  <div class="panel" id="p-progress">
+    <div class="panel-head" data-panel="p-progress">
+      <span class="panel-label">Run progress</span>
+      <div class="panel-right">
+        <span style="font-size:10px;font-family:var(--font-mono);color:var(--text-3)" id="toolbox-progress-counter">0/0</span>
+        <svg class="chevron open" id="chev-p-progress" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="2,4 6,8 10,4"/></svg>
+      </div>
+    </div>
+    <div class="panel-body" id="body-p-progress">
+      <div class="mini-progress">
+        <div class="progress-track"><div class="progress-fill" id="toolbox-progress-fill"></div></div>
+        <span class="progress-label" id="toolbox-progress-label">0 / 0</span>
+      </div>
+    </div>
+  </div>
+  <div class="adv-col" id="adv-col">
+    <div class="panel" id="p-steps">
+      <div class="panel-head" data-panel="p-steps">
+        <span class="panel-label">Step detail</span>
+        <div class="panel-right">
+          <svg class="chevron open" id="chev-p-steps" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="2,4 6,8 10,4"/></svg>
         </div>
-        <div class="progress-bar-wrap"><div class="progress-bar-fill" id="toolbox-progress-bar"></div></div>
       </div>
-      <div class="log-area" id="toolbox-logs">
-        <div class="empty-state">Select a session to see its steps</div>
+      <div class="panel-body" id="body-p-steps">
+        <div class="step-scroll"><div class="step-list" id="toolbox-step-list"></div></div>
+        <div class="progress-footer">
+          <div class="progress-track"><div class="progress-fill"></div></div>
+          <span class="progress-label">0 / 0</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel" id="p-log">
+      <div class="panel-head" data-panel="p-log">
+        <span class="panel-label">System log</span>
+        <div class="panel-right">
+          <svg class="chevron open" id="chev-p-log" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="2,4 6,8 10,4"/></svg>
+        </div>
+      </div>
+      <div class="panel-body" id="body-p-log">
+        <div class="log-tabs">
+          <button class="log-tab active" data-level="all">All</button>
+          <button class="log-tab" data-level="info">Info</button>
+          <button class="log-tab" data-level="warn">Warn</button>
+          <button class="log-tab" data-level="err">Error</button>
+        </div>
+        <div class="log-entries" id="toolbox-log-entries">
+          <div class="log-entry" style="color:var(--text-3);font-size:11px;text-align:center;padding:16px 8px;font-family:var(--font-ui);display:block">No log entries yet</div>
+        </div>
       </div>
     </div>
   </div>
@@ -233,11 +386,11 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   <div class="assert-card">
     <div class="assert-title">Add assertion step</div>
     <div class="assert-row">
-      <label class="assert-label" for="toolbox-assert-selector">Selector</label>
+      <label class="assert-label">Selector</label>
       <input class="assert-input" id="toolbox-assert-selector" placeholder="#email or [name=&quot;email&quot;]" />
     </div>
     <div class="assert-row">
-      <label class="assert-label" for="toolbox-assert-property">Property</label>
+      <label class="assert-label">Property</label>
       <select class="assert-select" id="toolbox-assert-property">
         <option value="visible">visible</option>
         <option value="value">value</option>
@@ -246,7 +399,7 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
       </select>
     </div>
     <div class="assert-row">
-      <label class="assert-label" for="toolbox-assert-expected">Expected</label>
+      <label class="assert-label">Expected</label>
       <input class="assert-input" id="toolbox-assert-expected" placeholder="optional for visible" />
       <div class="assert-hint" id="toolbox-assert-hint">For checked use true/false.</div>
       <div class="assert-error" id="toolbox-assert-error"></div>
@@ -258,26 +411,12 @@ button.icon-btn{padding:4px 8px;min-width:26px;font-size:11px}
   </div>
 </div>`;
 
-function requireElement<T extends HTMLElement>(root: ParentNode, selector: string): T {
+function requireElement<T extends Element>(root: ParentNode, selector: string): T {
   const node = root.querySelector(selector);
-  if (!(node instanceof HTMLElement)) {
+  if (!(node instanceof Element)) {
     throw new Error(`Toolbox node not found: ${selector}`);
   }
   return node as T;
-}
-
-function readCollapsed(): boolean {
-  try {
-    return localStorage.getItem(COLLAPSE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeCollapsed(collapsed: boolean): void {
-  try {
-    localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
-  } catch {}
 }
 
 function formatRelativeDate(dateValue?: number | string): string {
@@ -299,14 +438,16 @@ function sessionLabel(session: StoredSessionV2): string {
   return session.name || "Untitled session";
 }
 
-function toSelectorStrategy(selector: string):
+function toSelectorStrategy(
+  selector: string,
+):
   | { kind: "id"; value: string }
   | { kind: "name"; value: string }
   | { kind: "css"; value: string } {
   if (selector.startsWith("#") && selector.length > 1) {
     return { kind: "id", value: selector.slice(1) };
   }
-  if (selector.startsWith("[name=\"") && selector.endsWith("\"]")) {
+  if (selector.startsWith('[name="') && selector.endsWith('"]')) {
     return { kind: "name", value: selector.slice(7, -2) };
   }
   return { kind: "css", value: selector };
@@ -320,6 +461,25 @@ function scanFieldCount(): number {
   ).filter((node) => node instanceof HTMLElement && !node.closest(`#${ROOT_ID}`)).length;
 }
 
+function escapeHtml(text: string): string {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+
+function injectFontLink(root: Node): void {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Geist:wght@400;500;600;700&display=swap";
+  root.appendChild(link);
+}
+
 export function mountToolbox(storage: Storage = localStorage): void {
   if (document.documentElement.getAttribute(MOUNT_ATTR) === "true") {
     return;
@@ -329,38 +489,51 @@ export function mountToolbox(storage: Storage = localStorage): void {
   const host = document.createElement("div");
   host.id = ROOT_ID;
   document.body.appendChild(host);
+  host.style.all = "initial";
 
   const shadow = host.attachShadow({ mode: "open" });
+  injectFontLink(shadow);
   shadow.innerHTML = TOOLBOX_HTML;
 
   const elements: ToolboxElements = {
-    app: requireElement(shadow, ".app"),
-    state: requireElement(shadow, "#toolbox-state"),
+    fab: requireElement(shadow, "#toolbox-fab"),
+    toolboxWrap: requireElement(shadow, "#toolbox-wrap"),
+    modeSimple: requireElement(shadow, "#toolbox-mode-simple"),
+    modeAdv: requireElement(shadow, "#toolbox-mode-adv"),
+    stateBadge: requireElement(shadow, "#toolbox-state-badge"),
+    stateDot: requireElement(shadow, "#toolbox-state-dot"),
+    stateText: requireElement(shadow, "#toolbox-state-text"),
     count: requireElement(shadow, "#toolbox-count"),
+    sessionsCount: requireElement(shadow, "#toolbox-sessions-count"),
+    sessionsCountLabel: requireElement(shadow, "#toolbox-session-count-label"),
     errors: requireElement(shadow, "#toolbox-errors"),
-    active: requireElement(shadow, "#toolbox-active"),
-    logs: requireElement(shadow, "#toolbox-logs"),
+    selName: requireElement(shadow, "#toolbox-sel-name"),
+    selRun: requireElement(shadow, "#toolbox-sel-run"),
+    selBar: requireElement(shadow, "#toolbox-selected-bar"),
+    stepList: requireElement(shadow, "#toolbox-step-list"),
+    progressFill: requireElement(shadow, "#toolbox-progress-fill"),
+    progressLabel: requireElement(shadow, "#toolbox-progress-label"),
+    progressCounter: requireElement(shadow, "#toolbox-progress-counter"),
     record: requireElement(shadow, "#toolbox-record"),
     stop: requireElement(shadow, "#toolbox-stop"),
     run: requireElement(shadow, "#toolbox-run"),
     pause: requireElement(shadow, "#toolbox-pause"),
     step: requireElement(shadow, "#toolbox-step"),
-    export: requireElement(shadow, "#toolbox-export"),
-    assert: requireElement(shadow, "#toolbox-assert"),
+    exportBtn: requireElement(shadow, "#toolbox-export"),
+    assertBtn: requireElement(shadow, "#toolbox-assert"),
     scan: requireElement(shadow, "#toolbox-scan"),
     save: requireElement(shadow, "#toolbox-save"),
     newSession: requireElement(shadow, "#toolbox-new-session"),
-    collapse: requireElement(shadow, "#toolbox-collapse-toggle"),
     sessionsGrid: requireElement(shadow, "#toolbox-sessions-grid"),
-    sessionsPane: requireElement(shadow, "#toolbox-sessions-pane"),
-    detailPane: requireElement(shadow, "#toolbox-detail-pane"),
-    sessionsCount: requireElement(shadow, "#toolbox-sessions-count"),
-    lastRun: requireElement(shadow, "#toolbox-last-run"),
-    stepCounter: requireElement(shadow, "#toolbox-step-counter"),
-    activeInfo: requireElement(shadow, "#toolbox-active-info"),
-    activeTitle: requireElement(shadow, "#toolbox-active-title"),
-    runningBadge: requireElement(shadow, "#toolbox-running-badge"),
-    progressBar: requireElement(shadow, "#toolbox-progress-bar"),
+    chevSessions: requireElement(shadow, "#chev-p-sessions"),
+    chevProgress: requireElement(shadow, "#chev-p-progress"),
+    chevSteps: requireElement(shadow, "#chev-p-steps"),
+    chevLog: requireElement(shadow, "#chev-p-log"),
+    bodySessions: requireElement(shadow, "#body-p-sessions"),
+    bodyProgress: requireElement(shadow, "#body-p-progress"),
+    bodySteps: requireElement(shadow, "#body-p-steps"),
+    bodyLog: requireElement(shadow, "#body-p-log"),
+    advCol: requireElement(shadow, "#adv-col"),
     assertModal: requireElement(shadow, "#toolbox-assert-modal"),
     assertSelector: requireElement(shadow, "#toolbox-assert-selector"),
     assertProperty: requireElement(shadow, "#toolbox-assert-property"),
@@ -369,11 +542,15 @@ export function mountToolbox(storage: Storage = localStorage): void {
     assertError: requireElement(shadow, "#toolbox-assert-error"),
     assertCancel: requireElement(shadow, "#toolbox-assert-cancel"),
     assertApply: requireElement(shadow, "#toolbox-assert-apply"),
+    systemLogEntries: requireElement(shadow, "#toolbox-log-entries"),
   };
 
   const core = createToolboxCoreFacade();
+  const logManager = new LogManager();
   const state: ToolboxState = {
-    collapsed: readCollapsed(),
+    mode: "simple",
+    panelCollapsed: {},
+    fabOpen: false,
     currentSessionId: "",
     renamingId: "",
     runningSessionId: "",
@@ -382,36 +559,24 @@ export function mountToolbox(storage: Storage = localStorage): void {
     lastRunLabel: "Never",
     errorCount: 0,
     lastReplay: null,
-    draftSession: null,
+    logFilter: "all",
+    logAutoScroll: true,
   };
-  const runtimeLogs: string[] = [];
   let observer: MutationObserver | null = null;
   let scanTimer = 0;
 
   const getSessions = (): StoredSessionV2[] => readStoredSessions(storage);
 
-  const writeLog = (message: string): void => {
-    runtimeLogs.push(message);
-    elements.logs.textContent = runtimeLogs.slice(-12).join("\n");
-  };
-
   const setStatus = (status: "idle" | "recording" | "running"): void => {
-    if (status === "recording") {
-      elements.state.textContent = "Recording";
-      elements.state.className = "status-pill status-recording";
-      return;
-    }
-    if (status === "running") {
-      elements.state.textContent = "Running";
-      elements.state.className = "status-pill status-running";
-      return;
-    }
-    elements.state.textContent = "Idle";
-    elements.state.className = "status-pill status-idle";
+    elements.stateText.textContent =
+      status === "recording" ? "Recording" : status === "running" ? "Running" : "Idle";
+    const isRecording = status === "recording";
+    elements.stateDot.classList.toggle("recording", isRecording);
+    elements.stateBadge.classList.toggle("recording", isRecording);
+    elements.fab.classList.toggle("recording", isRecording);
   };
 
   const updateButtons = (): void => {
-    const hasDraft = Boolean(state.draftSession);
     const hasSelectedSession = Boolean(
       state.currentSessionId &&
         getSessions().some((session) => session.id === state.currentSessionId),
@@ -420,79 +585,94 @@ export function mountToolbox(storage: Storage = localStorage): void {
     elements.stop.disabled = !core.isRecording() && !state.runningSessionId;
     elements.run.disabled = core.isRecording();
     elements.pause.disabled = !state.runningSessionId;
-    const pauseLabel = elements.pause.querySelector(".btn-label");
-    if (pauseLabel) {
-      pauseLabel.textContent = state.replayPaused ? "Resume" : "Pause";
-    }
+    const pauseSpan = elements.pause.querySelector("span");
+    if (pauseSpan) pauseSpan.textContent = state.replayPaused ? "Resume" : "Pause";
     elements.step.disabled = !state.runningSessionId || !state.replayPaused;
-    elements.export.disabled = core.isRecording() || Boolean(state.runningSessionId) || !hasSelectedSession;
-    elements.assert.disabled = core.isRecording() || Boolean(state.runningSessionId) || !hasSelectedSession;
+    elements.exportBtn.disabled =
+      core.isRecording() || Boolean(state.runningSessionId) || !hasSelectedSession;
+    elements.assertBtn.disabled =
+      core.isRecording() || Boolean(state.runningSessionId) || !hasSelectedSession;
     elements.scan.disabled = core.isRecording();
-    elements.save.disabled = core.isRecording() || !hasDraft;
+    elements.save.disabled = !hasSelectedSession;
     elements.newSession.disabled = core.isRecording() || Boolean(state.runningSessionId);
-    if (!hasSelectedSession && !hasDraft) {
-      elements.active.textContent = "No active session";
-    }
-  };
-
-  const applyCollapsedUi = (): void => {
-    elements.app.classList.toggle("collapsed", state.collapsed);
-    elements.collapse.innerHTML = state.collapsed ? ICONS.chevronRight : ICONS.chevronDown;
-    elements.collapse.title = state.collapsed ? "Expand" : "Collapse";
   };
 
   const refreshScan = (): void => {
     elements.count.textContent = String(scanFieldCount());
     elements.errors.textContent = String(state.errorCount);
-    elements.lastRun.textContent = state.lastRunLabel;
+  };
+
+  const renderSystemLogs = (): void => {
+    const entries = logManager.getFiltered(state.logFilter);
+    if (entries.length === 0) {
+      elements.systemLogEntries.innerHTML = `<div class="log-entry" style="color:var(--text-3);font-size:11px;text-align:center;padding:16px 8px;font-family:var(--font-ui);display:block">No log entries yet</div>`;
+      return;
+    }
+    elements.systemLogEntries.innerHTML = entries
+      .map((e) => {
+        const cls = e.level === "info" ? "info" : e.level;
+        return `<div class="log-entry ${cls}" data-level="${e.level}">
+        <span class="log-time">${formatTime(e.ts)}</span>
+        <span class="log-lvl ${cls}">${e.level}</span>
+        <span class="log-msg">${escapeHtml(e.message)}</span>
+      </div>`;
+      })
+      .join("");
+    if (state.logAutoScroll) {
+      elements.systemLogEntries.scrollTop = elements.systemLogEntries.scrollHeight;
+    }
+  };
+
+  const setLogFilter = (level: LogLevel | "all"): void => {
+    state.logFilter = level;
+    shadow
+      .querySelectorAll<HTMLButtonElement>(".log-tab")
+      .forEach((btn) => btn.classList.toggle("active", btn.dataset["level"] === level));
+    renderSystemLogs();
+  };
+
+  logManager.onUpdate = () => {
+    renderSystemLogs();
   };
 
   const renderDetail = (): void => {
     const activeSession =
-      state.draftSession && state.currentSessionId === "__draft__"
-        ? state.draftSession
-        : (getSessions().find((session) => session.id === state.currentSessionId) ?? null);
+      getSessions().find((session) => session.id === state.currentSessionId) ?? null;
 
     if (!activeSession) {
-      elements.detailPane.style.display = "none";
-      elements.sessionsPane.style.width = "100%";
-      elements.logs.innerHTML = `<div class="empty-state">Select a session to see its steps</div>`;
-      elements.activeInfo.style.display = "none";
-      elements.stepCounter.textContent = "";
+      elements.stepList.innerHTML = `<div class="step-list"><div style="color:var(--text-3);font-size:11px;text-align:center;padding:24px 8px;font-family:var(--font-ui)">Select a session</div></div>`;
       updateButtons();
       return;
     }
 
-    elements.detailPane.style.display = "flex";
-    elements.sessionsPane.style.width = "55%";
-    elements.activeInfo.style.display = "block";
-    elements.activeTitle.textContent = sessionLabel(activeSession);
-    elements.stepCounter.textContent = `${activeSession.steps.length} steps`;
-    elements.runningBadge.style.display =
-      state.runningSessionId === activeSession.id ? "inline-flex" : "none";
+    elements.stepList.innerHTML = "";
+
+    if (activeSession.steps.length === 0) {
+      elements.stepList.innerHTML = `<div style="color:var(--text-3);font-size:11px;text-align:center;padding:24px 8px;font-family:var(--font-ui)">No steps recorded yet</div>`;
+      updateButtons();
+      return;
+    }
 
     const pct =
       state.currentStepIndex >= 0 && activeSession.steps.length > 0
         ? Math.round(((state.currentStepIndex + 1) / activeSession.steps.length) * 100)
         : 0;
-    elements.progressBar.style.width = `${pct}%`;
-    elements.logs.innerHTML = "";
-
-    if (activeSession.steps.length === 0) {
-      elements.logs.innerHTML = `<div class="empty-state">No steps recorded yet</div>`;
-      updateButtons();
-      return;
-    }
+    elements.progressFill.style.width = `${pct}%`;
+    elements.progressLabel.textContent = `${state.currentStepIndex >= 0 ? state.currentStepIndex + 1 : 0} / ${activeSession.steps.length}`;
+    elements.progressCounter.textContent = `${state.currentStepIndex >= 0 ? state.currentStepIndex + 1 : 0}/${activeSession.steps.length}`;
 
     activeSession.steps.forEach((step, index) => {
       const row = document.createElement("div");
-      let rowClass = "pending";
-      let rowIcon = ICONS.record;
+      row.className = "step";
+
+      let numClass = "";
+      let textClass = "";
       if (state.runningSessionId === activeSession.id && index < state.currentStepIndex) {
-        rowClass = "done";
-        rowIcon = ICONS.check;
+        numClass = "done";
+        textClass = "done";
       } else if (state.runningSessionId === activeSession.id && index === state.currentStepIndex) {
-        rowClass = "running";
+        numClass = "active";
+        textClass = "active";
       }
 
       const detail =
@@ -502,9 +682,17 @@ export function mountToolbox(storage: Storage = localStorage): void {
             ? `${step.displayName}`
             : `${step.displayName} -> ${step.selector}`;
 
-      row.className = `log-line ${rowClass}`;
-      row.innerHTML = `<span class="log-icon">${rowIcon}</span><span>${detail}</span>`;
-      elements.logs.appendChild(row);
+      const typeClass =
+        step.type === "click" ||
+        step.type === "input" ||
+        step.type === "select" ||
+        step.type === "keyboard"
+          ? step.type
+          : "";
+      const typeBadge = typeClass ? `<span class="step-type ${typeClass}">${step.type}</span>` : "";
+
+      row.innerHTML = `<span class="step-num ${numClass}">${index + 1}</span>${typeBadge}<span class="step-text ${textClass}">${escapeHtml(detail)}</span>`;
+      elements.stepList.appendChild(row);
     });
 
     updateButtons();
@@ -514,135 +702,59 @@ export function mountToolbox(storage: Storage = localStorage): void {
     const sessions = getSessions();
     elements.sessionsGrid.innerHTML = "";
     elements.sessionsCount.textContent = String(sessions.length);
+    elements.sessionsCountLabel.textContent = `${sessions.length} recording${sessions.length !== 1 ? "s" : ""}`;
 
-    if (
-      !sessions.some((session) => session.id === state.currentSessionId) &&
-      state.currentSessionId !== "__draft__"
-    ) {
+    if (!sessions.some((session) => session.id === state.currentSessionId)) {
       state.currentSessionId = "";
     }
 
-    if (state.draftSession) {
-      const draftCard = document.createElement("div");
-      draftCard.className = `session-card${state.currentSessionId === "__draft__" ? " active" : ""}`;
-      draftCard.innerHTML = `
-        <div class="session-top">
-          <span class="session-name">${sessionLabel(state.draftSession)} (draft)</span>
-          <div class="session-actions">
-            <button class="icon-btn primary" data-action="save" title="Save">${ICONS.save}</button>
-          </div>
-        </div>
-        <div class="session-meta">
-          <span class="badge badge-gray">${state.draftSession.steps.length} steps</span>
-          <span>Unsaved recording</span>
-        </div>`;
-      draftCard.addEventListener("click", () => {
-        state.currentSessionId = "__draft__";
-        renderSessionsGrid();
-      });
-      draftCard.querySelector("[data-action='save']")?.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const suggestedName = state.draftSession?.name ?? `Session ${new Date().toLocaleString()}`;
-        const name = window.prompt("Session name", suggestedName) ?? suggestedName;
-        if (!state.draftSession) return;
-        const saved = {
-          ...state.draftSession,
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          name: name.trim() || suggestedName,
-        };
-        saveStoredSession(saved, storage);
-        state.currentSessionId = saved.id;
-        state.draftSession = null;
-        writeLog(`saved locally: ${saved.name}`);
-        renderSessionsGrid();
-      });
-      elements.sessionsGrid.appendChild(draftCard);
-    }
+    const activeSession = sessions.find((session) => session.id === state.currentSessionId);
+    elements.selBar.classList.toggle("show", Boolean(activeSession));
+    elements.selName.textContent = activeSession ? sessionLabel(activeSession) : "Select a session";
 
     for (const session of sessions) {
-      const card = document.createElement("div");
+      const item = document.createElement("div");
       const isActive = state.currentSessionId === session.id;
-      card.className = `session-card${isActive ? " active" : ""}`;
-      card.setAttribute("data-session-id", session.id);
+      item.className = `session-item${isActive ? " active" : ""}`;
+      item.setAttribute("data-session-id", session.id);
 
-      const isRenaming = state.renamingId === session.id;
-      const nameMarkup = isRenaming
-        ? `<input class="session-name-input" id="rename-${session.id}" value="${sessionLabel(session)}" />`
-        : `<span class="session-name">${sessionLabel(session)}</span>`;
-
-      card.innerHTML = `
-        <div class="session-top">
-          ${nameMarkup}
-          <div class="session-actions">
-            <button class="icon-btn" data-action="rename" title="Rename">${ICONS.edit}</button>
-            <button class="icon-btn primary" data-action="run" title="Run">${ICONS.play}</button>
-            <button class="icon-btn danger-soft" data-action="delete" title="Delete">${ICONS.close}</button>
-          </div>
+      item.innerHTML = `
+        <span class="s-dot${isActive ? " active" : ""}"></span>
+        <div class="s-info">
+          <div class="s-name">${sessionLabel(session)}</div>
+          <div class="s-meta">${session.steps.length} steps · ${formatRelativeDate(session.lastRunAt)}</div>
         </div>
-        <div class="session-meta">
-          <span class="badge badge-blue">${session.steps.length} steps</span>
-          <span>Last run: ${formatRelativeDate(session.lastRunAt)}</span>
+        <div class="s-actions">
+          <button data-action="rename" title="Rename">${ICONS.edit}</button>
+          <button data-action="delete" title="Delete">${ICONS.close}</button>
         </div>`;
 
-      card.addEventListener("click", (event) => {
+      item.addEventListener("click", (event) => {
         const target = event.target as HTMLElement;
-        if (target.closest("button") || target.closest("input")) return;
+        if (target.closest("button")) return;
         state.currentSessionId = state.currentSessionId === session.id ? "" : session.id;
         renderSessionsGrid();
       });
 
-      card.querySelector("[data-action='rename']")?.addEventListener("click", (event) => {
+      item.querySelector("[data-action='rename']")?.addEventListener("click", (event) => {
         event.stopPropagation();
         state.renamingId = session.id;
         renderSessionsGrid();
       });
 
-      card.querySelector("[data-action='run']")?.addEventListener("click", (event) => {
-        event.stopPropagation();
-        state.currentSessionId = session.id;
-        void runSelectedSession(session.id);
-      });
-
-      card.querySelector("[data-action='delete']")?.addEventListener("click", (event) => {
+      item.querySelector("[data-action='delete']")?.addEventListener("click", (event) => {
         event.stopPropagation();
         deleteStoredSession(session.id, storage);
         if (state.currentSessionId === session.id) {
           state.currentSessionId = "";
         }
-        writeLog("deleted session");
+        logManager.info("Session", "deleted session");
         renderSessionsGrid();
       });
 
-      elements.sessionsGrid.appendChild(card);
-
-      if (isRenaming) {
-        queueMicrotask(() => {
-          const input = shadow.getElementById(`rename-${session.id}`) as HTMLInputElement | null;
-          if (!input) return;
-          input.focus();
-          input.select();
-          const commit = () => {
-            updateStoredSession(session.id, { name: input.value.trim() || session.name }, storage);
-            state.renamingId = "";
-            renderSessionsGrid();
-          };
-          input.addEventListener("blur", commit, { once: true });
-          input.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") commit();
-            if (event.key === "Escape") {
-              state.renamingId = "";
-              renderSessionsGrid();
-            }
-          });
-        });
-      }
+      elements.sessionsGrid.appendChild(item);
     }
 
-    const activeSession =
-      state.currentSessionId === "__draft__"
-        ? state.draftSession
-        : sessions.find((session) => session.id === state.currentSessionId);
-    elements.active.textContent = activeSession ? sessionLabel(activeSession) : "No active session";
     renderDetail();
     refreshScan();
   };
@@ -682,13 +794,11 @@ export function mountToolbox(storage: Storage = localStorage): void {
     elements.assertError.textContent = "";
   };
 
-  const parseAssertionInput = ():
-    | {
-        selector: string;
-        property: AssertionProperty;
-        expected: string | boolean | undefined;
-      }
-    | null => {
+  const parseAssertionInput = (): {
+    selector: string;
+    property: AssertionProperty;
+    expected: string | boolean | undefined;
+  } | null => {
     const selector = elements.assertSelector.value.trim();
     if (!selector) {
       setAssertError("Selector is required.");
@@ -696,7 +806,12 @@ export function mountToolbox(storage: Storage = localStorage): void {
     }
     const property = elements.assertProperty.value as AssertionProperty;
     const expectedRaw = property === "visible" ? "" : elements.assertExpected.value.trim();
-    if (property === "checked" && expectedRaw && expectedRaw !== "true" && expectedRaw !== "false") {
+    if (
+      property === "checked" &&
+      expectedRaw &&
+      expectedRaw !== "true" &&
+      expectedRaw !== "false"
+    ) {
       setAssertError("Checked expects true or false.");
       return null;
     }
@@ -726,7 +841,7 @@ export function mountToolbox(storage: Storage = localStorage): void {
   const runSelectedSession = async (sessionId = state.currentSessionId): Promise<void> => {
     const session = getSessions().find((item) => item.id === sessionId);
     if (!session) {
-      writeLog("no recording to run");
+      logManager.warn("Replay", "no recording to run");
       return;
     }
 
@@ -746,7 +861,7 @@ export function mountToolbox(storage: Storage = localStorage): void {
       },
       onError: (message) => {
         state.errorCount += 1;
-        writeLog(message);
+        logManager.error("Replay", message);
         refreshScan();
       },
       onPause: () => {
@@ -766,23 +881,37 @@ export function mountToolbox(storage: Storage = localStorage): void {
         setStatus("idle");
         updateStoredSession(session.id, (s) => ({ ...s, lastRunAt: Date.now() }), storage);
         renderSessionsGrid();
-        writeLog(`run complete (${session.steps.length} steps)`);
-        writeLog(`total ${Math.round(result.totalMs)}ms, slow steps ${result.slowSteps.length}`);
+        logManager.success("Replay", `run complete (${session.steps.length} steps)`);
+        logManager.info(
+          "Replay",
+          `total ${Math.round(result.totalMs)}ms, slow steps ${result.slowSteps.length}`,
+        );
       },
     });
   };
 
   const stopCurrentAction = (): void => {
     if (core.isRecording()) {
-      const suggestedName = `Session ${new Date().toLocaleString()}`;
-      state.draftSession = core.stopRecording(suggestedName);
-      state.currentSessionId = state.draftSession ? "__draft__" : "";
+      const formatDate = new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+      const suggestedName = `Recording ${formatDate.format(new Date())}`;
+      const session = core.stopRecording(suggestedName);
+      if (session) {
+        session.id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        saveStoredSession(session, storage);
+        state.currentSessionId = session.id;
+        logManager.success("Recording", `stopped (${session.steps.length} steps) - auto-saved`);
+      } else {
+        state.currentSessionId = "";
+        logManager.info("Recording", "stopped");
+      }
       setStatus("idle");
-      writeLog(
-        state.draftSession
-          ? `recording stopped (${state.draftSession.steps.length} steps)`
-          : "recording stopped",
-      );
       renderSessionsGrid();
       return;
     }
@@ -793,17 +922,62 @@ export function mountToolbox(storage: Storage = localStorage): void {
     core.stopReplay();
     setStatus("idle");
     renderSessionsGrid();
-    writeLog("run stopped");
+    logManager.info("Replay", "run stopped");
   };
 
   const startRecording = (): void => {
-    state.draftSession = null;
     state.currentSessionId = "";
     core.startRecording();
     setStatus("recording");
     updateButtons();
-    writeLog("recording started");
+    logManager.info("Recording", "started");
   };
+
+  // Panel collapse
+  const panelConfig: Record<string, { body: HTMLElement; chevron: HTMLElement }> = {
+    "p-sessions": { body: elements.bodySessions, chevron: elements.chevSessions },
+    "p-progress": { body: elements.bodyProgress, chevron: elements.chevProgress },
+    "p-steps": { body: elements.bodySteps, chevron: elements.chevSteps },
+    "p-log": { body: elements.bodyLog, chevron: elements.chevLog },
+  };
+
+  shadow.querySelectorAll<HTMLElement>(".panel-head").forEach((head) => {
+    head.addEventListener("click", () => {
+      const id = head.dataset["panel"];
+      if (!id || !panelConfig[id]) return;
+      const collapsed = !state.panelCollapsed[id];
+      state.panelCollapsed[id] = collapsed;
+      panelConfig[id].body.classList.toggle("collapsed", collapsed);
+      panelConfig[id].chevron.classList.toggle("open", !collapsed);
+    });
+  });
+
+  // FAB toggle
+  elements.fab.addEventListener("click", () => {
+    state.fabOpen = !state.fabOpen;
+    elements.fab.classList.toggle("active", state.fabOpen);
+    elements.toolboxWrap.classList.toggle("hidden", !state.fabOpen);
+    elements.toolboxWrap.classList.toggle("visible", state.fabOpen);
+  });
+
+  // Mode toggle
+  elements.modeSimple.addEventListener("click", () => {
+    state.mode = "simple";
+    elements.modeSimple.classList.add("active");
+    elements.modeSimple.setAttribute("aria-checked", "true");
+    elements.modeAdv.classList.remove("active");
+    elements.modeAdv.setAttribute("aria-checked", "false");
+    elements.advCol.classList.remove("show");
+  });
+
+  elements.modeAdv.addEventListener("click", () => {
+    state.mode = "advanced";
+    elements.modeAdv.classList.add("active");
+    elements.modeAdv.setAttribute("aria-checked", "true");
+    elements.modeSimple.classList.remove("active");
+    elements.modeSimple.setAttribute("aria-checked", "false");
+    elements.advCol.classList.add("show");
+  });
 
   observer = new MutationObserver(scheduleScan);
   observer.observe(document.body, { childList: true, subtree: true });
@@ -811,18 +985,6 @@ export function mountToolbox(storage: Storage = localStorage): void {
   elements.record.addEventListener("click", startRecording);
   elements.stop.addEventListener("click", stopCurrentAction);
   elements.run.addEventListener("click", () => {
-    if (state.currentSessionId === "__draft__" && state.draftSession) {
-      saveStoredSession(
-        {
-          ...state.draftSession,
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        },
-        storage,
-      );
-      state.draftSession = null;
-      renderSessionsGrid();
-      return;
-    }
     void runSelectedSession();
   });
   elements.pause.addEventListener("click", () => {
@@ -840,16 +1002,23 @@ export function mountToolbox(storage: Storage = localStorage): void {
     if (!state.runningSessionId || !state.replayPaused) return;
     await core.stepReplay();
   });
-  elements.export.addEventListener("click", async () => {
+
+  elements.selRun.addEventListener("click", () => {
+    if (state.currentSessionId) {
+      void runSelectedSession(state.currentSessionId);
+    }
+  });
+
+  elements.exportBtn.addEventListener("click", async () => {
     const session = getSessions().find((item) => item.id === state.currentSessionId);
     if (!session) {
-      writeLog("select a session to export");
+      logManager.warn("Export", "select a session to export");
       return;
     }
     const code = core.exportSessionToPlaywright(session);
     try {
       await navigator.clipboard.writeText(code);
-      writeLog("playwright export copied to clipboard");
+      logManager.info("Export", "playwright export copied to clipboard");
     } catch {
       const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -858,17 +1027,18 @@ export function mountToolbox(storage: Storage = localStorage): void {
       link.download = `${sessionLabel(session).replace(/\s+/g, "-").toLowerCase()}.playwright.ts`;
       link.click();
       URL.revokeObjectURL(url);
-      writeLog("playwright export downloaded");
+      logManager.info("Export", "playwright export downloaded");
     }
   });
-  elements.assert.addEventListener("click", () => {
+  elements.assertBtn.addEventListener("click", () => {
     const session = getSessions().find((item) => item.id === state.currentSessionId);
     if (!session) {
-      writeLog("select a saved session first");
+      logManager.warn("Assert", "select a saved session first");
       return;
     }
     openAssertModal();
   });
+
   elements.assertCancel.addEventListener("click", closeAssertModal);
   elements.assertProperty.addEventListener("change", updateAssertHint);
   elements.assertExpected.addEventListener("input", clearAssertError);
@@ -893,7 +1063,7 @@ export function mountToolbox(storage: Storage = localStorage): void {
   elements.assertApply.addEventListener("click", () => {
     const session = getSessions().find((item) => item.id === state.currentSessionId);
     if (!session) {
-      writeLog("select a saved session first");
+      logManager.warn("Assert", "select a saved session first");
       return;
     }
 
@@ -926,28 +1096,13 @@ export function mountToolbox(storage: Storage = localStorage): void {
       }),
       storage,
     );
-    writeLog(`assert step added (${property})`);
+    logManager.info("Assert", `assert step added (${property})`);
     closeAssertModal();
     renderSessionsGrid();
   });
   elements.scan.addEventListener("click", refreshScan);
   elements.save.addEventListener("click", () => {
-    if (!state.draftSession) {
-      writeLog("nothing to save");
-      return;
-    }
-    const suggestedName = state.draftSession.name || `Session ${new Date().toLocaleString()}`;
-    const name = window.prompt("Session name", suggestedName) ?? suggestedName;
-    const saved = {
-      ...state.draftSession,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: name.trim() || suggestedName,
-    };
-    saveStoredSession(saved, storage);
-    state.currentSessionId = saved.id;
-    state.draftSession = null;
-    writeLog(`saved locally: ${saved.name}`);
-    renderSessionsGrid();
+    logManager.info("Session", "nothing to save");
   });
   elements.newSession.addEventListener("click", () => {
     const session: StoredSessionV2 = {
@@ -966,17 +1121,23 @@ export function mountToolbox(storage: Storage = localStorage): void {
     state.currentSessionId = session.id;
     state.renamingId = session.id;
     renderSessionsGrid();
-  });
-  elements.collapse.addEventListener("click", () => {
-    state.collapsed = !state.collapsed;
-    writeCollapsed(state.collapsed);
-    applyCollapsedUi();
+    logManager.info("Session", "new session created");
   });
 
-  window.addEventListener("popstate", scheduleScan);
-  window.addEventListener("hashchange", scheduleScan);
+  // Log filter buttons
+  shadow.querySelectorAll<HTMLButtonElement>(".log-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setLogFilter((btn.dataset["level"] as LogLevel | "all") || "all");
+    });
+  });
 
-  applyCollapsedUi();
+  elements.systemLogEntries.addEventListener("scroll", () => {
+    const el = elements.systemLogEntries;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    state.logAutoScroll = atBottom;
+  });
+
   renderSessionsGrid();
   refreshScan();
+  renderSystemLogs();
 }

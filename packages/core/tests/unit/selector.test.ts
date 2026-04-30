@@ -177,6 +177,25 @@ describe("selector", () => {
     expect(resolveElement(selector)).toBe(input);
   });
 
+  it("skips placeholder selector when placeholder is not unique", () => {
+    document.body.innerHTML = "";
+    const inputA = document.createElement("input");
+    inputA.type = "text";
+    inputA.setAttribute("placeholder", "Enter a number...");
+    const inputB = document.createElement("input");
+    inputB.type = "text";
+    inputB.setAttribute("placeholder", "Enter a number...");
+    document.body.append(inputA, inputB);
+
+    const selectorA = extractSelectors(inputA);
+    const placeholderStrategy = selectorA.strategies.find(
+      (strategy) => strategy.value === '[placeholder="Enter a number..."]',
+    );
+    expect(placeholderStrategy).toBeUndefined();
+    expect(selectorA.strategies[0]?.type).toBe("css");
+    expect(resolveElement(selectorA)).toBe(inputA);
+  });
+
   it("keeps readonly selector as css strategy", () => {
     document.body.innerHTML = "";
     const input = document.createElement("input");
@@ -203,5 +222,19 @@ describe("selector", () => {
     const selector = extractSelectors(inputA);
     const readonlyStrategy = selector.strategies.find((item) => item.value === "[readonly]");
     expect(readonlyStrategy).toBeUndefined();
+  });
+
+  it("uses data-value selector when present", () => {
+    document.body.innerHTML = "";
+
+    const option = document.createElement("div");
+    option.setAttribute("role", "option");
+    option.setAttribute("data-value", "June");
+    document.body.append(option);
+
+    const selector = extractSelectors(option);
+    const values = selector.strategies.map((s) => s.value);
+    expect(values).toContain('[data-value="June"]');
+    expect(resolveElement(selector)).toBe(option);
   });
 });

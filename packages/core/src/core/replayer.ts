@@ -144,7 +144,8 @@ export class Replayer {
         const selector = "selector" in step ? step.selector : undefined;
         if (!selector) continue;
 
-        const el = await this.resolveElementWithRetry(selector);
+        const confidence = step.metadata?.selectorConfidence;
+        const el = await this.resolveElementWithRetry(selector, confidence);
         if (!el) {
           status = "error";
           const err = new Error(buildMissingElementMessage(step));
@@ -374,8 +375,11 @@ export class Replayer {
     });
   }
 
-  private async resolveElementWithRetry(selector: SelectorStrategy): Promise<Element | null> {
-    const timeoutMs = 1200;
+  private async resolveElementWithRetry(
+    selector: SelectorStrategy,
+    confidence?: "high" | "medium" | "low",
+  ): Promise<Element | null> {
+    const timeoutMs = confidence === "low" ? 2800 : confidence === "medium" ? 1800 : 1200;
     const intervalMs = 120;
     const start = Date.now();
 
@@ -437,7 +441,7 @@ async function executeStep(step: FormScriptStep, el: Element): Promise<void> {
       await setDatePickerInputValue(el, value);
       return;
     }
-    await setInputValue(el as HTMLInputElement | HTMLTextAreaElement, step.value);
+    await setInputValue(el as HTMLInputElement | HTMLTextAreaElement, step.value, step.metadata);
     return;
   }
   if (step.type === "select") {
@@ -494,6 +498,8 @@ async function selectDatePickerDay(
   );
   if (dayByAria) {
     dayByAria.click();
+    blurElementIfPossible(trigger);
+    await sleep(35);
     return;
   }
 
@@ -502,10 +508,21 @@ async function selectDatePickerDay(
     : null;
   if (dayByNormalized) {
     dayByNormalized.click();
+    blurElementIfPossible(trigger);
+    await sleep(35);
     return;
   }
 
   throw new Error(`Datepicker day not found (${dayAriaLabel})`);
+}
+
+function blurElementIfPossible(el: HTMLElement): void {
+  const maybeInput = el as HTMLInputElement | HTMLTextAreaElement;
+  if (typeof maybeInput.blur === "function") {
+    maybeInput.blur();
+    return;
+  }
+  el.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
 }
 
 async function setDatePickerInputValue(el: Element, value: string): Promise<void> {
@@ -551,6 +568,29 @@ async function findDatePickerDayByNormalizedValue(isoDate: string): Promise<HTML
   const [, yyyy, mm, dd] = parsed;
   if (!yyyy || !mm || !dd) {
     return null;
+  }
+
+  // Support alternative datepicker implementations that render a custom calendar
+  // (e.g. rdp-root with MUI Select month/year).
+  const rdpRoot = getVisibleRdpRoot();
+  if (rdpRoot) {
+    const paper = rdpRoot.closest(".MuiPaper-root") ?? rdpRoot.closest('[role="presentation"]') ?? rdpRoot;
+    if (paper instanceof HTMLElement) {
+      const monthNumber = Number(mm);
+      if (Number.isFinite(monthNumber)) {
+        await setRdpMonthYearFromIsoDate(paper, Number(monthNumber), yyyy);
+      }
+    }
+
+    const cell = rdpRoot.querySelector(`[data-day="${isoDate}"]`) as HTMLElement | null;
+    if (cell) {
+      const button = (cell.querySelector("button[aria-label]") ?? cell.querySelector("button")) as
+        | HTMLButtonElement
+        | null;
+      if (button instanceof HTMLElement && isElementVisible(button)) {
+        return button;
+      }
+    }
   }
 
   const popper = getVisibleDatePickerPopper();
@@ -601,12 +641,86 @@ function getVisibleDatePickerPopper(): HTMLElement | null {
   return visible instanceof HTMLElement ? visible : null;
 }
 
+function getVisibleRdpRoot(): HTMLElement | null {
+  const roots = Array.from(document.querySelectorAll(".rdp-root"));
+  return (
+    roots.find(
+      (candidate): candidate is HTMLElement => candidate instanceof HTMLElement && isElementVisible(candidate),
+    ) ?? null
+  );
+}
+
+async function setRdpMonthYearFromIsoDate(paper: HTMLElement, monthNumber: number, year: string): Promise<void> {
+  const MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+
+  const monthName = MONTH_NAMES[monthNumber - 1];
+  if (!monthName) return;
+
+  const comboSelects = Array.from(
+    paper.querySelectorAll("div[role='combobox'][aria-haspopup='listbox']"),
+  ).filter((el): el is HTMLElement => el instanceof HTMLElement);
+
+  const monthCombo = comboSelects.find((el) => normalizeMuiSelectText(el.textContent) === monthName.toLowerCase());
+  const yearCombo = comboSelects.find((el) => /^\d{4}$/.test(normalizeMuiSelectText(el.textContent)));
+
+  if (monthCombo instanceof HTMLElement) {
+    await setMuiSelectOptionByDataValue(monthCombo, monthName);
+  }
+  if (yearCombo instanceof HTMLElement) {
+    await setMuiSelectOptionByDataValue(yearCombo, year);
+  }
+}
+
+function normalizeMuiSelectText(text: string | null): string {
+  return (text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+async function setMuiSelectOptionByDataValue(combobox: HTMLElement, target: string): Promise<void> {
+  // Open the select.
+  combobox.click();
+  const targetEscaped = target;
+  const option = await waitForElement(
+    () =>
+      Array.from(document.querySelectorAll("[role='option'][data-value]")).find((candidate) => {
+        if (!(candidate instanceof HTMLElement)) return false;
+        if (!isElementVisible(candidate)) return false;
+        return candidate.getAttribute("data-value") === targetEscaped;
+      }) as HTMLElement | null,
+    1400,
+    50,
+  );
+
+  if (!option) return;
+
+  option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  option.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  option.click();
+  await sleep(35);
+}
+
 async function selectReactSelectOption(
   el: Element,
   step: Extract<FormScriptStep, { type: "select" }>,
 ): Promise<void> {
   const input = resolveReactSelectInput(el);
   await ensureReactSelectMenuOpen(el, input);
+  if (input) {
+    focusElement(input);
+  }
+  const beforeValue = input?.value ?? "";
 
   const option = await waitForElement(
     () =>
@@ -618,7 +732,34 @@ async function selectReactSelectOption(
     1400,
     50,
   );
-  option?.click();
+  if (!option) return;
+
+  // MUI/React select often wires selection to pointer/mousedown, not only click.
+  option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  option.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  option.click();
+
+  if (input) {
+    // Nudge controlled inputs in case the library depends on these events.
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // Some MUI react-select implementations rely on internal state updates that
+    // may not happen from synthetic clicks. If the displayed input value did not
+    // change, force-set it to the recorded selection label.
+    const expected = step.value;
+    const afterValue = input.value ?? "";
+    // Only force-set when the library did not update the combobox at all.
+    // (Some apps set a non-label internal value; we must not override that.)
+    if (expected && (afterValue === beforeValue || afterValue === "")) {
+      const prototype = window.HTMLInputElement.prototype;
+      const nativeValueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      nativeValueSetter?.call(input, expected);
+      if (input.value !== expected) input.value = expected;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
 }
 
 function resolveReactSelectInput(el: Element): HTMLInputElement | null {
@@ -642,13 +783,27 @@ function findReactSelectOptionByLabel(
   if (!label) {
     return null;
   }
-  const normalized = label.trim();
+  const normalized = normalizeOptionLabel(label);
   if (!normalized) {
     return null;
   }
   const options = Array.from(root.querySelectorAll("[role='option']"));
-  const match = options.find((option) => (option.textContent ?? "").trim() === normalized);
+  const exactMatch = options.find((option) => normalizeOptionLabel(option.textContent) === normalized);
+  if (exactMatch instanceof HTMLElement && isElementVisible(exactMatch)) {
+    return exactMatch;
+  }
+
+  // MUI/portal options often contain formatting whitespace or extra text fragments.
+  const containsMatch = options.find((option) => {
+    const optionText = normalizeOptionLabel(option.textContent);
+    return optionText.includes(normalized) || normalized.includes(optionText);
+  });
+  const match = containsMatch;
   return match instanceof HTMLElement && isElementVisible(match) ? match : null;
+}
+
+function normalizeOptionLabel(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function findReactSelectOptionById(
@@ -667,8 +822,17 @@ function findReactSelectOptionById(
 
 function findVisibleElementByAriaLabel(label: string): HTMLElement | null {
   const allWithAriaLabel = Array.from(document.querySelectorAll("[aria-label]"));
-  const match = allWithAriaLabel.find((candidate) => candidate.getAttribute("aria-label") === label);
+  const expected = normalizeAriaLabel(label);
+  const match = allWithAriaLabel.find((candidate) => normalizeAriaLabel(candidate.getAttribute("aria-label")) === expected);
   return match instanceof HTMLElement && isElementVisible(match) ? match : null;
+}
+
+function normalizeAriaLabel(value: string | null): string {
+  return (value ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/,\s*selected$/i, "")
+    .replace(/^Today,\s*/i, "Today, ")
+    .trim();
 }
 
 async function ensureReactSelectMenuOpen(
@@ -764,9 +928,12 @@ function isElementVisible(el: HTMLElement): boolean {
 async function setInputValue(
   el: HTMLInputElement | HTMLTextAreaElement,
   value: string,
+  metadata?: Extract<FormScriptStep, { type: "input" }>["metadata"],
 ): Promise<void> {
   if (el.disabled) return;
   if (el.readOnly) return;
+
+  focusElement(el);
 
   const prototype =
     el instanceof HTMLTextAreaElement
@@ -794,6 +961,13 @@ async function setInputValue(
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
   el.dispatchEvent(new Event("change", { bubbles: true }));
+  if (shouldCommitInputOnBlur(metadata)) {
+    blurElement(el);
+    const valueAtCommit = el.value;
+    // Many apps (MUI/number formatters) commit formatting in a debounced/useEffect
+    // tick after blur. Wait until the value stabilizes so the UI has time.
+    await waitForStableInputValue(el, valueAtCommit, 300, 60);
+  }
 }
 
 function shouldTypeLikeHuman(el: HTMLInputElement | HTMLTextAreaElement): boolean {
@@ -828,6 +1002,50 @@ async function typeLikeHuman(
     el.dispatchEvent(new Event("input", { bubbles: true }));
     (el as HTMLElement).dispatchEvent(new KeyboardEvent("keyup", { key: ch, bubbles: true }));
     await sleep(12);
+  }
+}
+
+function shouldCommitInputOnBlur(
+  metadata: Extract<FormScriptStep, { type: "input" }>["metadata"],
+): boolean {
+  return metadata?.commitReason === "change" || metadata?.commitReason === "tab";
+}
+
+function focusElement(el: HTMLInputElement | HTMLTextAreaElement): void {
+  if (document.activeElement !== el) {
+    el.focus();
+  }
+}
+
+function blurElement(el: HTMLInputElement | HTMLTextAreaElement): void {
+  if (typeof el.blur === "function") {
+    el.blur();
+    return;
+  }
+  (el as HTMLElement).dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+  (el as HTMLElement).dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+}
+
+async function waitForStableInputValue(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  initialValue: string,
+  timeoutMs: number,
+  stableMs: number,
+): Promise<void> {
+  let lastValue = el.value ?? initialValue;
+  let lastChangeAt = Date.now();
+
+  const start = Date.now();
+  while (Date.now() - start <= timeoutMs) {
+    await sleep(20);
+    const current = el.value ?? "";
+    if (current !== lastValue) {
+      lastValue = current;
+      lastChangeAt = Date.now();
+    }
+    if (Date.now() - lastChangeAt >= stableMs) {
+      return;
+    }
   }
 }
 

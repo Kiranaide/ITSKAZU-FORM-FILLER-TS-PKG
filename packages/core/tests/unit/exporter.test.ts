@@ -5,31 +5,6 @@ import type { FormScript } from "../../src/core/schema";
 import { exportToPlaywright } from "../../src/exporters/playwright.exporter";
 
 describe("playwright exporter", () => {
-  it("renders masked fields using env vars", () => {
-    const script: FormScript = {
-      version: 2,
-      id: "s1",
-      name: "Masked Flow",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      origin: "https://example.test",
-      steps: [
-        {
-          type: "input",
-          selector: { kind: "id", value: "email" },
-          value: "[MASKED]",
-          masked: true,
-          timestamp: 0,
-        },
-      ],
-    };
-
-    const code = exportToPlaywright(script);
-    expect(code.includes("process.env.FIELD_EMAIL")).toBe(true);
-    expect(code.includes("TODO: set env var FIELD_EMAIL")).toBe(true);
-    expect(code.includes("page.locator('#email').fill")).toBe(true);
-  });
-
   it("generates syntactically valid TypeScript", () => {
     const script: FormScript = {
       version: 2,
@@ -99,7 +74,6 @@ describe("playwright exporter", () => {
           type: "input",
           selector: { kind: "name", value: "birthDate" },
           value: "03/09/1966",
-          masked: false,
           timestamp: 0,
           metadata: {
             controlType: "datepicker",

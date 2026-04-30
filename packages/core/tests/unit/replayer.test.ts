@@ -35,14 +35,12 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "email" },
         value: "user@example.com",
-        masked: false,
         timestamp: 0,
       },
       {
         type: "input",
         selector: { kind: "id", value: "tos" },
         value: "true",
-        masked: false,
         timestamp: 1,
       },
     ]);
@@ -51,6 +49,38 @@ describe("replayer", () => {
 
     expect(input.value).toBe("user@example.com");
     expect(checkbox.checked).toBe(true);
+  });
+
+  it("commits blur-based formatting for change-driven inputs", async () => {
+    document.body.innerHTML = "";
+
+    const input = document.createElement("input");
+    input.name = "loanDetails.effectiveMoratoriumRate";
+    input.addEventListener("blur", () => {
+      if (input.value === "5") {
+        input.value = "5.00";
+      }
+    });
+    document.body.append(input);
+
+    const script = createV2Script([
+      {
+        type: "input",
+        selector: { kind: "name", value: "loanDetails.effectiveMoratoriumRate" },
+        value: "5",
+        timestamp: 0,
+        metadata: {
+          controlType: "text",
+          commitReason: "change",
+          selectorSource: "name",
+          selectorConfidence: "high",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+
+    expect(input.value).toBe("5.00");
   });
 
   it("handles select values", async () => {
@@ -112,6 +142,85 @@ describe("replayer", () => {
     expect(input.value).toBe("agency");
   });
 
+  it("selects react-select option when selection is bound to mousedown", async () => {
+    document.body.innerHTML = "";
+
+    const control = document.createElement("div");
+    control.className = "css-react-select-control";
+    const input = document.createElement("input");
+    input.id = "react-select-1-input";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    control.append(input);
+
+    const menu = document.createElement("div");
+    menu.className = "css-react-select-menu";
+    const option = document.createElement("div");
+    option.setAttribute("role", "option");
+    option.setAttribute("data-value", "agency");
+    option.textContent = "Agency Banking";
+    option.addEventListener("mousedown", () => {
+      input.value = "agency";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    menu.append(option);
+    document.body.append(control, menu);
+
+    const script = createV2Script([
+      {
+        type: "select",
+        selector: { kind: "id", value: "react-select-1-input" },
+        value: "agency",
+        timestamp: 0,
+        metadata: {
+          controlType: "react-select",
+          optionLabel: "Agency Banking",
+          optionId: "agency",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("agency");
+  });
+
+  it("forces input value when option click does not update combobox", async () => {
+    document.body.innerHTML = "";
+
+    const control = document.createElement("div");
+    control.className = "css-react-select-control";
+    const input = document.createElement("input");
+    input.id = "react-select-1-input";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    input.value = "";
+    control.append(input);
+
+    const menu = document.createElement("div");
+    const option = document.createElement("div");
+    option.setAttribute("role", "option");
+    option.textContent = "2C - Auto Valuation";
+    // Intentionally do NOT update input on selection to simulate a handler mismatch.
+    menu.append(option);
+    document.body.append(control, menu);
+
+    const script = createV2Script([
+      {
+        type: "select",
+        selector: { kind: "id", value: "react-select-1-input" },
+        value: "2C - Auto Valuation",
+        timestamp: 0,
+        metadata: {
+          controlType: "react-select",
+          optionLabel: "2C - Auto Valuation",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("2C - Auto Valuation");
+  });
+
   it("waits for delayed react-select options before clicking", async () => {
     document.body.innerHTML = "";
 
@@ -159,6 +268,46 @@ describe("replayer", () => {
 
     await new Replayer({ script }).play();
     expect(input.value).toBe("agency");
+  });
+
+  it("selects react-select option with normalized label matching", async () => {
+    document.body.innerHTML = "";
+
+    const control = document.createElement("div");
+    control.className = "css-react-select-control";
+    const input = document.createElement("input");
+    input.id = "react-select-1-input";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    control.append(input);
+
+    const menu = document.createElement("div");
+    menu.className = "MuiPaper-root";
+    const option = document.createElement("li");
+    option.setAttribute("role", "option");
+    option.textContent = "  11842 - (14.750000%)   LOAN FIXED 2-YR  ";
+    option.addEventListener("click", () => {
+      input.value = "selected";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    menu.append(option);
+    document.body.append(control, menu);
+
+    const script = createV2Script([
+      {
+        type: "select",
+        selector: { kind: "id", value: "react-select-1-input" },
+        value: "11842 - (14.750000%) LOAN FIXED 2-YR",
+        timestamp: 0,
+        metadata: {
+          controlType: "react-select",
+          optionLabel: "11842 - (14.750000%) LOAN FIXED 2-YR",
+        },
+      },
+    ]);
+
+    await new Replayer({ script }).play();
+    expect(input.value).toBe("selected");
   });
 
   it("handles multi-select values", async () => {
@@ -226,7 +375,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "03/09/1966",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -264,7 +412,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "03/09/1966",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -291,7 +438,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "03/09/1966",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -317,7 +463,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -366,7 +511,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "dob" },
         value: "",
-        masked: false,
         timestamp: 0,
         metadata: {
           controlType: "datepicker",
@@ -393,7 +537,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "search" },
         value: "test query",
-        masked: false,
         timestamp: 0,
       },
       { type: "keyboard", selector: { kind: "id", value: "search" }, key: "Enter", timestamp: 1 },
@@ -452,7 +595,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "name" },
         value: "skipped",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -480,7 +622,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "field" },
         value: "test",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -505,7 +646,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "not-found" },
         value: "test",
-        masked: false,
         timestamp: 0,
       },
       { type: "click", selector: { kind: "id", value: "success" }, timestamp: 1 },
@@ -531,7 +671,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "input" },
         value: "test",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -562,7 +701,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "test" },
         value: "hello",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -585,7 +723,6 @@ describe("replayer", () => {
         type: "input",
         selector: { kind: "id", value: "field" },
         value: "ok",
-        masked: false,
         timestamp: 0,
       },
     ]);
@@ -615,5 +752,36 @@ describe("replayer", () => {
     }).play();
 
     expect(error).toBeInstanceOf(AssertionError);
+  });
+
+  it("waits longer for low-confidence selectors", async () => {
+    document.body.innerHTML = "";
+
+    let clicked = false;
+
+    const script = createV2Script([
+      {
+        type: "click",
+        selector: { kind: "id", value: "swal-confirm" },
+        timestamp: 0,
+        metadata: {
+          controlType: "button",
+          commitReason: "click",
+          selectorConfidence: "low",
+        },
+      },
+    ]);
+
+    setTimeout(() => {
+      const btn = document.createElement("button");
+      btn.id = "swal-confirm";
+      btn.addEventListener("click", () => {
+        clicked = true;
+      });
+      document.body.append(btn);
+    }, 1500);
+
+    await new Replayer({ script }).play();
+    expect(clicked).toBe(true);
   });
 });

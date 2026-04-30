@@ -17,10 +17,7 @@ describe("recorder", () => {
     form.append(input, checkbox);
     document.body.append(form);
 
-    const recorder = new Recorder({
-      root: document.body,
-      maskSensitiveInputs: false,
-    });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
 
     input.value = "user@example.com";
@@ -38,7 +35,7 @@ describe("recorder", () => {
     expect(actions[1]?.value).toBe(true);
   });
 
-  it("masks sensitive values and respects ignore selectors", () => {
+  it("captures password values and respects ignore selectors", () => {
     document.body.innerHTML = "";
 
     const form = document.createElement("form");
@@ -57,35 +54,11 @@ describe("recorder", () => {
     const recorder = new Recorder({ root: document.body, ignore: [".skip"] });
     recorder.start();
 
-    password.value = "secret";
+    password.value = "local-only-secret";
     password.dispatchEvent(new Event("input", { bubbles: true }));
 
     ignored.value = "should-not-record";
     ignored.dispatchEvent(new Event("input", { bubbles: true }));
-
-    const script = recorder.stop();
-    const actions = script.actions ?? [];
-
-    expect(actions).toHaveLength(1);
-    expect(actions[0]?.type).toBe("input");
-    expect(actions[0]?.value).toBe("[MASKED]");
-  });
-
-  it("captures password values when sensitive masking is disabled", () => {
-    document.body.innerHTML = "";
-    const password = document.createElement("input");
-    password.type = "password";
-    password.name = "password";
-    document.body.append(password);
-
-    const recorder = new Recorder({
-      root: document.body,
-      maskSensitiveInputs: false,
-    });
-    recorder.start();
-
-    password.value = "local-only-secret";
-    password.dispatchEvent(new Event("input", { bubbles: true }));
 
     const script = recorder.stop();
     const actions = script.actions ?? [];
@@ -118,7 +91,7 @@ describe("recorder", () => {
     form.append(select, radioA, radioB);
     document.body.append(form);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
 
     select.value = "us";
@@ -180,7 +153,7 @@ describe("recorder", () => {
     input.id = "email";
     document.body.append(input);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
 
     input.dispatchEvent(
@@ -207,7 +180,7 @@ describe("recorder", () => {
     option.setAttribute("aria-label", "Facility class option");
     document.body.append(option);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
     option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const script = recorder.stop();
@@ -413,7 +386,7 @@ describe("recorder", () => {
     day.setAttribute("aria-label", "Choose Wednesday, March 9th, 1966");
     document.body.append(input, month, year, day);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
     input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     month.value = "2";
@@ -435,6 +408,33 @@ describe("recorder", () => {
     }
   });
 
+  it("collapses react-datepicker day when aria-label doesn't start with Choose", () => {
+    document.body.innerHTML = "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "react-datepicker-ignore-onclickoutside";
+
+    const day = document.createElement("div");
+    day.setAttribute("aria-label", "Thursday, April 30th, 2026");
+
+    document.body.append(input, day);
+
+    const recorder = new Recorder({ root: document.body });
+    recorder.start();
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    day.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const script = recorder.stop();
+    const dateStep = script.steps?.find((step) => step.type === "input");
+    expect(dateStep?.type).toBe("input");
+    if (dateStep?.type === "input") {
+      expect(dateStep.metadata?.controlType).toBe("datepicker");
+      expect(dateStep.metadata?.commitReason).toBe("calendar-day");
+      expect(dateStep.metadata?.normalizedValue).toBe("2026-04-30");
+      expect(dateStep.value).toBe("04/30/2026");
+    }
+  });
+
   it("captures datepicker input commit without calendar day click", () => {
     document.body.innerHTML = "";
     const input = document.createElement("input");
@@ -442,7 +442,7 @@ describe("recorder", () => {
     input.className = "react-datepicker-ignore-onclickoutside";
     document.body.append(input);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
     input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     input.value = "03/09/1966";
@@ -479,7 +479,7 @@ describe("recorder", () => {
     popper.append(month, year, day);
     document.body.append(input, popper);
 
-    const recorder = new Recorder({ root: document.body, maskSensitiveInputs: false });
+    const recorder = new Recorder({ root: document.body });
     recorder.start();
     input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
