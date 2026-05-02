@@ -480,6 +480,36 @@ function injectFontLink(root: Node): void {
   root.appendChild(link);
 }
 
+const cleanupMap = new WeakMap<
+  ShadowRoot,
+  { observer: MutationObserver | null; scanTimer: number }
+>();
+
+export function unmountToolbox(): void {
+  const host = document.getElementById(ROOT_ID);
+  if (!host?.shadowRoot) return;
+
+  const refs = cleanupMap.get(host.shadowRoot);
+  if (refs) {
+    refs.observer?.disconnect();
+    window.clearTimeout(refs.scanTimer);
+  }
+  cleanupMap.delete(host.shadowRoot);
+
+  host.remove();
+  document.documentElement.removeAttribute(MOUNT_ATTR);
+
+  if (typeof window.__kazuFiraToolboxMounted !== "undefined") {
+    window.__kazuFiraToolboxMounted = false;
+  }
+}
+
+declare global {
+  interface Window {
+    __kazuFiraToolboxMounted?: boolean;
+  }
+}
+
 export function mountToolbox(storage: Storage = localStorage): void {
   if (document.documentElement.getAttribute(MOUNT_ATTR) === "true") {
     return;
@@ -625,13 +655,10 @@ export function mountToolbox(storage: Storage = localStorage): void {
 
   const setLogFilter = (level: LogLevel | "all"): void => {
     state.logFilter = level;
-    shadow
-      .querySelectorAll<HTMLButtonElement>(".log-tab")
-      .forEach((btn) => btn.classList.toggle("active", btn.dataset["level"] === level));
-    renderSystemLogs();
-  };
-
-  logManager.onUpdate = () => {
+    const tabs = shadow.querySelectorAll<HTMLButtonElement>(".log-tab");
+    for (const btn of tabs) {
+      btn.classList.toggle("active", btn.dataset["level"] === level);
+    }
     renderSystemLogs();
   };
 
@@ -1140,4 +1167,6 @@ export function mountToolbox(storage: Storage = localStorage): void {
   renderSessionsGrid();
   refreshScan();
   renderSystemLogs();
+
+  cleanupMap.set(shadow, { observer, scanTimer });
 }

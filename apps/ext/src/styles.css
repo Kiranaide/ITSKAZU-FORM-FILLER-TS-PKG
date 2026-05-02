@@ -32,7 +32,7 @@ body {
 }
 
 button {
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.5rem 0.85rem;
   font: inherit;
@@ -40,7 +40,6 @@ button {
   font-weight: 600;
   color: var(--text-2);
   background: var(--surface-2);
-  border: 1px solid var(--border);
   cursor: pointer;
   transition:
     background var(--transition),

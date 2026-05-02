@@ -11,11 +11,8 @@
     "type": "module"
   },
   "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["<all_urls>"],
-  "web_accessible_resources": [
-    {
-      "resources": ["content-entry.js", "assets/*.js"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; frame-ancestors 'none'"
+  }
 }

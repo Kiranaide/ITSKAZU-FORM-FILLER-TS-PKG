@@ -1,6 +1,10 @@
-import { EXTENSION_EVENTS, type ExtensionMessage } from "./messages.js";
+import { PORT_CONNECTION_NAME, PORT_MESSAGES } from "./messages.js";
 
 const AUTO_INJECT_ORIGINS_KEY = "kazu-fira:auto-inject-origins:v1";
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500;
+
+const contentPorts = new Map<number, chrome.runtime.Port>();
 
 function isInjectableTab(
   tab: chrome.tabs.Tab,
@@ -51,74 +55,96 @@ async function isAutoInjectEnabled(origin: string): Promise<boolean> {
   return map[origin] === true;
 }
 
-async function injectIntoTab(tabId: number): Promise<void> {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      const scriptId = "__kazu-fira-content-entry-script";
-      const existing = document.getElementById(scriptId);
-      if (existing) {
-        existing.remove();
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function injectIntoTab(tabId: number, retries = MAX_RETRIES): Promise<void> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["content-entry.js"],
+      });
+      return;
+    } catch (error) {
+      if (attempt < retries) {
+        console.warn(
+          `[kazu-fira-ext] inject attempt ${attempt}/${retries} failed, retrying in ${RETRY_DELAY_MS}ms`,
+          error,
+        );
+        await sleep(RETRY_DELAY_MS);
+      } else {
+        console.error(`[kazu-fira-ext] inject failed after ${retries} attempts`, error);
+        throw error;
       }
-
-      const script = document.createElement("script");
-      script.id = scriptId;
-      script.type = "module";
-      script.src = chrome.runtime.getURL("content-entry.js");
-      script.onerror = () => {
-        script.remove();
-      };
-      (document.head ?? document.documentElement).appendChild(script);
-    },
-  });
-}
-
-function logEvent(message: ExtensionMessage): void {
-  const prefix = "[kazu-fira-ext]";
-  if (message.type === EXTENSION_EVENTS.mountError) {
-    console.error(prefix, message.type, {
-      tabId: message.tabId,
-      url: message.url,
-      error: message.message,
-    });
-    return;
+    }
   }
-  console.info(prefix, message.type, {
-    tabId: message.tabId,
-    url: message.url,
-  });
 }
+
+async function sendToggleOff(port: chrome.runtime.Port): Promise<void> {
+  port.postMessage({ type: PORT_MESSAGES.toggleOff });
+}
+
+function cleanupPort(tabId: number): void {
+  const port = contentPorts.get(tabId);
+  if (port) {
+    try {
+      port.disconnect();
+    } catch {}
+    contentPorts.delete(tabId);
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== PORT_CONNECTION_NAME) return;
+  if (typeof port.sender?.tab?.id !== "number") return;
+
+  const tabId = port.sender.tab.id;
+  contentPorts.set(tabId, port);
+
+  port.onDisconnect.addListener(() => {
+    contentPorts.delete(tabId);
+  });
+
+  port.onMessage.addListener((msg) => {
+    if (msg.type === PORT_MESSAGES.unmounted) {
+      contentPorts.delete(tabId);
+    }
+  });
+});
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (!isInjectableTab(tab)) return;
   const origin = toOrigin(tab.url);
   if (!origin) return;
 
+  const existingPort = contentPorts.get(tab.id);
+
+  if (existingPort) {
+    await toggleAutoInjectForOrigin(origin);
+    await chrome.action.setBadgeText({ tabId: tab.id, text: "" });
+    await sendToggleOff(existingPort);
+    return;
+  }
+
   const enabled = await toggleAutoInjectForOrigin(origin);
 
-  const injectRequested: ExtensionMessage = {
-    type: EXTENSION_EVENTS.injectRequested,
+  console.info("[kazu-fira-ext] action.clicked", {
     tabId: tab.id,
     url: tab.url,
-  };
-  logEvent(injectRequested);
+    enabled,
+  });
+
   await chrome.action.setBadgeText({ tabId: tab.id, text: enabled ? "ON" : "" });
   await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: "#2563eb" });
 
-  if (!enabled) {
-    return;
-  }
+  if (!enabled) return;
 
   try {
     await injectIntoTab(tab.id);
   } catch (error) {
-    const failure: ExtensionMessage = {
-      type: EXTENSION_EVENTS.mountError,
-      tabId: tab.id,
-      url: tab.url,
-      message: error instanceof Error ? error.message : String(error),
-    };
-    logEvent(failure);
+    console.error("[kazu-fira-ext] inject failed", error);
   }
 });
 
@@ -129,44 +155,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (!origin) return;
   if (!(await isAutoInjectEnabled(origin))) return;
 
+  if (contentPorts.has(tabId)) {
+    return;
+  }
+
   try {
     await injectIntoTab(tabId);
     await chrome.action.setBadgeText({ tabId, text: "ON" });
     await chrome.action.setBadgeBackgroundColor({ tabId, color: "#2563eb" });
   } catch (error) {
-    const failure: ExtensionMessage = {
-      type: EXTENSION_EVENTS.mountError,
-      tabId,
-      url: tab.url,
-      message: error instanceof Error ? error.message : String(error),
-    };
-    logEvent(failure);
+    console.error("[kazu-fira-ext] auto-inject failed", error);
   }
 });
 
-chrome.runtime.onMessage.addListener((message: unknown, sender) => {
-  if (!sender.tab || typeof sender.tab.id !== "number") return;
-  if (!sender.tab.url || typeof message !== "object" || message === null) return;
-  const candidate = message as Partial<ExtensionMessage>;
-  if (typeof candidate.type !== "string") return;
-
-  if (
-    candidate.type === EXTENSION_EVENTS.injected ||
-    candidate.type === EXTENSION_EVENTS.alreadyMounted ||
-    candidate.type === EXTENSION_EVENTS.mountError
-  ) {
-    const eventMessage: ExtensionMessage =
-      candidate.type === EXTENSION_EVENTS.mountError
-        ? {
-            type: candidate.type,
-            tabId: sender.tab.id,
-            url: sender.tab.url,
-            message:
-              typeof candidate.message === "string"
-                ? candidate.message
-                : "Unknown content script error",
-          }
-        : { type: candidate.type, tabId: sender.tab.id, url: sender.tab.url };
-    logEvent(eventMessage);
-  }
+chrome.tabs.onRemoved.addListener((tabId) => {
+  cleanupPort(tabId);
 });

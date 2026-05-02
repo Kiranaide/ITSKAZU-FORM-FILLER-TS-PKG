@@ -1,4 +1,4 @@
-import { type FormScript, type FormScriptStep, normalizeScriptInput } from "kazu-fira";
+import type { FormScript, FormScriptStep } from "kazu-fira";
 import type { SessionStep, StoredSessionV2 } from "../session-types.js";
 
 export const SESSION_STORAGE_KEY_V2 = "kazu-fira:sessions:v2";
@@ -16,7 +16,7 @@ function getBrowserContext(): BrowserContext {
   };
 }
 
-function normalizeText(value: string | null | undefined): string {
+function _normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim().replace(/\s+/g, " ");
 }
 

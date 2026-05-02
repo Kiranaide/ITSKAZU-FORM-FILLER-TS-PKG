@@ -1,40 +1,41 @@
 import { performance as nodePerformance } from "node:perf_hooks";
+import { JSDOM } from "jsdom";
 
-// const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-//   url: "https://example.test/",
-// });
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  url: "https://example.test/",
+});
 
-// const { window } = dom;
+const { window } = dom;
 
-// for (const key of [
-//   "window",
-//   "document",
-//   "navigator",
-//   "location",
-//   "MutationObserver",
-//   "CustomEvent",
-//   "Event",
-//   "MouseEvent",
-//   "KeyboardEvent",
-//   "FocusEvent",
-//   "SubmitEvent",
-//   "HTMLElement",
-//   "HTMLInputElement",
-//   "HTMLTextAreaElement",
-//   "HTMLSelectElement",
-//   "HTMLButtonElement",
-//   "HTMLFormElement",
-//   "Element",
-//   "Node",
-//   "ShadowRoot",
-//   "DOMParser",
-//   "CSS",
-// ] as const) {
-//   Object.defineProperty(globalThis, key, {
-//     value: (window as never)[key],
-//     configurable: true,
-//   });
-// }
+for (const key of [
+  "window",
+  "document",
+  "navigator",
+  "location",
+  "MutationObserver",
+  "CustomEvent",
+  "Event",
+  "MouseEvent",
+  "KeyboardEvent",
+  "FocusEvent",
+  "SubmitEvent",
+  "HTMLElement",
+  "HTMLInputElement",
+  "HTMLTextAreaElement",
+  "HTMLSelectElement",
+  "HTMLButtonElement",
+  "HTMLFormElement",
+  "Element",
+  "Node",
+  "ShadowRoot",
+  "DOMParser",
+  "CSS",
+] as const) {
+  Object.defineProperty(globalThis, key, {
+    value: (window as never)[key],
+    configurable: true,
+  });
+}
 
 Object.defineProperty(globalThis, "performance", {
   value: nodePerformance,
