@@ -35,3 +35,30 @@ export async function flushExtensionStorage(storage: Storage): Promise<void> {
     await chrome.storage.local.set(payload);
   }
 }
+
+let storageListener: ((changes: Record<string, chrome.storage.StorageChange>) => void) | null =
+  null;
+
+export function startStorageSync(): void {
+  if (!hasChromeStorage()) return;
+  if (storageListener) return;
+
+  storageListener = (changes: Record<string, chrome.storage.StorageChange>) => {
+    for (const key of SESSION_KEYS) {
+      const change = changes[key];
+      if (!change) continue;
+      const newValue = change.newValue;
+      if (typeof newValue === "string") {
+        localStorage.setItem(key, newValue);
+      }
+    }
+  };
+
+  chrome.storage.onChanged.addListener(storageListener);
+}
+
+export function stopStorageSync(): void {
+  if (!hasChromeStorage() || !storageListener) return;
+  chrome.storage.onChanged.removeListener(storageListener);
+  storageListener = null;
+}

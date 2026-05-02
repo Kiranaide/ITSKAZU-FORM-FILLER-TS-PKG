@@ -163,34 +163,26 @@ export class Recorder {
   private attachListeners(root: EventTarget): void {
     const controller = new AbortController();
     this.controllers.push(controller);
-    const signal = controller.signal;
 
     root.addEventListener("input", (event) => this.onInput(event as InputEvent), {
-      signal,
       capture: true,
     });
     root.addEventListener("change", (event) => this.onChange(event), {
-      signal,
       capture: true,
     });
     root.addEventListener("focus", (event) => this.onFocus(event as FocusEvent), {
-      signal,
       capture: true,
     });
     root.addEventListener("blur", (event) => this.onBlur(event as FocusEvent), {
-      signal,
       capture: true,
     });
     root.addEventListener("click", (event) => this.onClick(event as MouseEvent), {
-      signal,
       capture: true,
     });
     root.addEventListener("keydown", (event) => this.onKeyDown(event as KeyboardEvent), {
-      signal,
       capture: true,
     });
     root.addEventListener("submit", (event) => this.onSubmit(event as SubmitEvent), {
-      signal,
       capture: true,
     });
   }
@@ -198,15 +190,10 @@ export class Recorder {
   private attachNavigationListeners(): void {
     const controller = new AbortController();
     this.controllers.push(controller);
-    const signal = controller.signal;
 
-    window.addEventListener("popstate", (event) => this.onPopState(event as PopStateEvent), {
-      signal,
-    });
+    window.addEventListener("popstate", (event) => this.onPopState(event as PopStateEvent));
 
-    window.addEventListener("hashchange", (event) => this.onHashChange(), {
-      signal,
-    });
+    window.addEventListener("hashchange", (event) => this.onHashChange());
   }
 
   private onPopState(event: PopStateEvent): void {
@@ -460,13 +447,13 @@ export class Recorder {
         return;
       }
 
-      if (el.type === "checkbox") {
-        this.capture("checkbox", el, el.checked);
+       if (el.type === "checkbox") {
+        this.capture("input", el, String(el.checked));
         return;
       }
 
       if (el.type === "radio") {
-        this.capture("radio", el, el.value);
+        this.capture("input", el, String(el.checked));
         return;
       }
 

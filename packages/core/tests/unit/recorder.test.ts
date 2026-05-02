@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Recorder } from "../../src/core/recorder";
 
 describe("recorder", () => {
-  it("captures input and checkbox changes", () => {
+   it("captures input and checkbox changes", () => {
     document.body.innerHTML = "";
 
     const form = document.createElement("form");
@@ -31,8 +31,13 @@ describe("recorder", () => {
     expect(actions).toHaveLength(2);
     expect(actions[0]?.type).toBe("input");
     expect(actions[0]?.value).toBe("user@example.com");
-    expect(actions[1]?.type).toBe("checkbox");
-    expect(actions[1]?.value).toBe(true);
+    expect(actions[1]?.type).toBe("input");
+    expect(actions[1]?.value).toBe("true");
+    expect(script.steps).toHaveLength(2);
+    expect(script.steps[0]?.type).toBe("input");
+    expect(script.steps[0]?.value).toBe("user@example.com");
+    expect(script.steps[1]?.type).toBe("input");
+    expect(script.steps[1]?.value).toBe("true");
   });
 
   it("captures password values and respects ignore selectors", () => {
@@ -68,7 +73,7 @@ describe("recorder", () => {
     expect(actions[0]?.value).toBe("local-only-secret");
   });
 
-  it("captures select and radio changes", () => {
+   it("captures select and radio changes", () => {
     document.body.innerHTML = "";
 
     const form = document.createElement("form");
@@ -106,8 +111,13 @@ describe("recorder", () => {
     expect(actions).toHaveLength(2);
     expect(actions[0]?.type).toBe("select");
     expect(actions[0]?.value).toBe("us");
-    expect(actions[1]?.type).toBe("radio");
-    expect(actions[1]?.value).toBe("pro");
+    expect(actions[1]?.type).toBe("input");
+    expect(actions[1]?.value).toBe("true");
+    expect(script.steps).toHaveLength(2);
+    expect(script.steps[0]?.type).toBe("select");
+    expect(script.steps[0]?.value).toBe("us");
+    expect(script.steps[1]?.type).toBe("input");
+    expect(script.steps[1]?.value).toBe("true");
   });
 
   it("captures focus, blur, click, and submit in order", () => {

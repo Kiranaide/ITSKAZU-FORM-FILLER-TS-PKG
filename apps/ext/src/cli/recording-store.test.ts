@@ -12,7 +12,9 @@ const createStorage = (): Storage => {
       delete store[key];
     },
     clear: () => {
-      Object.keys(store).forEach((key) => delete store[key]);
+      for (const key of Object.keys(store)) {
+        delete store[key];
+      }
     },
     get length() {
       return Object.keys(store).length;

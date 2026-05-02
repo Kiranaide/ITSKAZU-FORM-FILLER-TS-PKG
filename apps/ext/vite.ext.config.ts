@@ -11,7 +11,7 @@ export default defineConfig({
   build: {
     outDir: "dist-ext",
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: false,
     rollupOptions: {
       input: {
         background: resolve(__dirname, "src/extension/background.ts"),
